@@ -1,0 +1,33 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+
+# Swift Package Manager
+/.build/
+/Packages/
+Package.resolved
+
+# Xcode
+DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+
+# Generated app artifacts
+/dist/
+/Resources/BrowserSelector.iconset/
+/Resources/BrowserSelector.icns
+
+# Signing and local secrets
+*.cer
+*.p12
+*.mobileprovision
+*.provisionprofile
+.env
+.env.*
+
+# Logs are intentionally not ignored globally.
+# Project policy: never delete logs unless explicitly requested.
