@@ -4,6 +4,7 @@ import Foundation
 final class URLDispatchCoordinator {
     private let browserRepository: BrowserRepository
     private let browserLauncher: BrowserLauncher
+    private let browserUsageStore: BrowserUsageStore
     private let preferences: Preferences
 
     private var pendingURLs: [URL] = []
@@ -13,10 +14,12 @@ final class URLDispatchCoordinator {
     init(
         browserRepository: BrowserRepository,
         browserLauncher: BrowserLauncher,
+        browserUsageStore: BrowserUsageStore,
         preferences: Preferences
     ) {
         self.browserRepository = browserRepository
         self.browserLauncher = browserLauncher
+        self.browserUsageStore = browserUsageStore
         self.preferences = preferences
     }
 
@@ -38,10 +41,11 @@ final class URLDispatchCoordinator {
         let url = pendingURLs.removeFirst()
         activeURL = url
 
-        let browsers = browserRepository.installedBrowsers()
+        let discoveredBrowsers = browserRepository.installedBrowsers()
         preferences.reconcileRememberedBrowser(
-            availableBundleIdentifiers: Set(browsers.map(\.bundleIdentifier))
+            availableBundleIdentifiers: Set(discoveredBrowsers.map(\.bundleIdentifier))
         )
+        let browsers = browserUsageStore.rankedBrowsers(discoveredBrowsers)
         guard !browsers.isEmpty else {
             UserNotifier.showError(
                 title: "Браузеры не найдены",
@@ -77,6 +81,7 @@ final class URLDispatchCoordinator {
                 DispatchQueue.main.async {
                     switch openResult {
                     case .success:
+                        self?.recordBrowserUse(browser)
                         self?.finishActiveURL()
                     case let .failure(error):
                         UserNotifier.showError(
@@ -88,6 +93,17 @@ final class URLDispatchCoordinator {
                     }
                 }
             }
+        }
+    }
+
+    private func recordBrowserUse(_ browser: Browser) {
+        do {
+            try browserUsageStore.recordUse(of: browser)
+        } catch {
+            UserNotifier.showError(
+                title: "Не удалось сохранить статистику браузера",
+                message: "Ссылка открыта, но статистика использования \(browser.displayName) не сохранена: \(error.localizedDescription)"
+            )
         }
     }
 

@@ -6,11 +6,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let preferences = Preferences.shared
     private let browserRepository = BrowserRepository()
     private let browserLauncher = BrowserLauncher()
+    private let browserUsageStore = BrowserUsageStore.shared
     private let registrationService = DefaultBrowserRegistrationService()
 
     private lazy var dispatchCoordinator = URLDispatchCoordinator(
         browserRepository: browserRepository,
         browserLauncher: browserLauncher,
+        browserUsageStore: browserUsageStore,
         preferences: preferences
     )
 
