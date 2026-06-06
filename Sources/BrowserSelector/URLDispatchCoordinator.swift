@@ -39,6 +39,9 @@ final class URLDispatchCoordinator {
         activeURL = url
 
         let browsers = browserRepository.installedBrowsers()
+        preferences.reconcileRememberedBrowser(
+            availableBundleIdentifiers: Set(browsers.map(\.bundleIdentifier))
+        )
         guard !browsers.isEmpty else {
             UserNotifier.showError(
                 title: "Браузеры не найдены",
@@ -68,9 +71,7 @@ final class URLDispatchCoordinator {
             finishActiveURL()
 
         case let .open(browser):
-            if preferences.rememberLastBrowser {
-                preferences.lastBrowserBundleIdentifier = browser.bundleIdentifier
-            }
+            preferences.rememberBrowserChoice(bundleIdentifier: browser.bundleIdentifier)
 
             browserLauncher.open(url, in: browser) { [weak self] openResult in
                 DispatchQueue.main.async {

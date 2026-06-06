@@ -2,8 +2,10 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_NAME="Browser Selector"
-BINARY_NAME="BrowserSelector"
+INFO_PLIST="${ROOT_DIR}/Resources/Info.plist"
+APP_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "${INFO_PLIST}")"
+BINARY_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${INFO_PLIST}")"
+ICON_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "${INFO_PLIST}")"
 DIST_DIR="${ROOT_DIR}/dist"
 APP_DIR="${DIST_DIR}/${APP_NAME}.app"
 CONTENTS_DIR="${APP_DIR}/Contents"
@@ -22,8 +24,8 @@ rm -rf "${APP_DIR}"
 mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}"
 
 cp ".build/release/${BINARY_NAME}" "${MACOS_DIR}/${BINARY_NAME}"
-cp "Resources/Info.plist" "${CONTENTS_DIR}/Info.plist"
-cp "Resources/BrowserSelector.icns" "${RESOURCES_DIR}/BrowserSelector.icns"
+cp "${INFO_PLIST}" "${CONTENTS_DIR}/Info.plist"
+cp "Resources/${ICON_NAME}.icns" "${RESOURCES_DIR}/${ICON_NAME}.icns"
 printf 'APPL????' > "${CONTENTS_DIR}/PkgInfo"
 
 chmod +x "${MACOS_DIR}/${BINARY_NAME}"

@@ -2,8 +2,9 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_DIR="${ROOT_DIR}/dist/Browser Selector.app"
 INFO_PLIST="${ROOT_DIR}/Resources/Info.plist"
+APP_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "${INFO_PLIST}")"
+APP_DIR="${ROOT_DIR}/dist/${APP_NAME}.app"
 BUILT_INFO_PLIST="${APP_DIR}/Contents/Info.plist"
 
 cd "${ROOT_DIR}"

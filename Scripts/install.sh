@@ -2,20 +2,21 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_NAME="Browser Selector.app"
+INFO_PLIST="${ROOT_DIR}/Resources/Info.plist"
+APP_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "${INFO_PLIST}").app"
 SOURCE_APP="${ROOT_DIR}/dist/${APP_NAME}"
 INSTALL_DIR="${HOME}/Applications"
 TARGET_APP="${INSTALL_DIR}/${APP_NAME}"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
-BUNDLE_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${ROOT_DIR}/Resources/Info.plist")"
+BUNDLE_EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${INFO_PLIST}")"
 
 "${ROOT_DIR}/Scripts/build.sh"
 
 mkdir -p "${INSTALL_DIR}"
-if /usr/bin/pgrep -x "${BUNDLE_IDENTIFIER##*.}" >/dev/null 2>&1; then
-    /usr/bin/pkill -TERM -x "${BUNDLE_IDENTIFIER##*.}" >/dev/null 2>&1 || true
+if /usr/bin/pgrep -x "${BUNDLE_EXECUTABLE}" >/dev/null 2>&1; then
+    /usr/bin/pkill -TERM -x "${BUNDLE_EXECUTABLE}" >/dev/null 2>&1 || true
     for _ in {1..20}; do
-        /usr/bin/pgrep -x "${BUNDLE_IDENTIFIER##*.}" >/dev/null 2>&1 || break
+        /usr/bin/pgrep -x "${BUNDLE_EXECUTABLE}" >/dev/null 2>&1 || break
         sleep 0.1
     done
 fi

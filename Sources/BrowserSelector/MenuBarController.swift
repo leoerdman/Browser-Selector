@@ -53,6 +53,10 @@ final class MenuBarController: NSObject {
     func refreshMenu() {
         let menu = NSMenu()
         let isDefaultBrowser = registrationService.isDefaultBrowser
+        let browsers = browserRepository.installedBrowsers()
+        preferences.reconcileRememberedBrowser(
+            availableBundleIdentifiers: Set(browsers.map(\.bundleIdentifier))
+        )
 
         let titleItem = NSMenuItem(title: "Browser Selector", action: nil, keyEquivalent: "")
         titleItem.isEnabled = false
@@ -88,7 +92,7 @@ final class MenuBarController: NSObject {
         menu.addItem(rememberItem)
 
         let rememberedItem = NSMenuItem(
-            title: rememberedBrowserTitle(),
+            title: rememberedBrowserTitle(in: browsers),
             action: nil,
             keyEquivalent: ""
         )
@@ -125,7 +129,7 @@ final class MenuBarController: NSObject {
         menu.addItem(.separator())
 
         let browserCountItem = NSMenuItem(
-            title: "\(browserRepository.installedBrowsers().count) Browsers Found",
+            title: "\(browsers.count) Browsers Found",
             action: nil,
             keyEquivalent: ""
         )
@@ -175,7 +179,7 @@ final class MenuBarController: NSObject {
         delegate?.menuBarControllerDidRequestAbout(self)
     }
 
-    private func rememberedBrowserTitle() -> String {
+    private func rememberedBrowserTitle(in browsers: [Browser]) -> String {
         guard preferences.rememberLastBrowser else {
             return "Default Choice: Off"
         }
@@ -184,7 +188,7 @@ final class MenuBarController: NSObject {
             return "Default Choice: Not Set"
         }
 
-        let browserName = browserRepository.installedBrowsers()
+        let browserName = browsers
             .first { $0.bundleIdentifier == bundleIdentifier }?
             .shortDisplayName
 

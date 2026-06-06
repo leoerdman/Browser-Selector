@@ -64,8 +64,44 @@ final class Preferences {
     }
 
     func resetRememberedBrowserChoice() {
-        rememberLastBrowser = false
-        lastBrowserBundleIdentifier = nil
+        let changed = rememberLastBrowser || lastBrowserBundleIdentifier != nil
+        userDefaults.set(false, forKey: Key.rememberLastBrowser.rawValue)
+        userDefaults.removeObject(forKey: Key.lastBrowserBundleIdentifier.rawValue)
+
+        if changed {
+            notifyChanged()
+        }
+    }
+
+    func rememberBrowserChoice(bundleIdentifier: String) {
+        guard rememberLastBrowser,
+              lastBrowserBundleIdentifier != bundleIdentifier
+        else {
+            return
+        }
+
+        userDefaults.set(bundleIdentifier, forKey: Key.lastBrowserBundleIdentifier.rawValue)
+        notifyChanged()
+    }
+
+    func reconcileRememberedBrowser(availableBundleIdentifiers: Set<String>) {
+        guard rememberLastBrowser else {
+            guard lastBrowserBundleIdentifier != nil else {
+                return
+            }
+
+            userDefaults.removeObject(forKey: Key.lastBrowserBundleIdentifier.rawValue)
+            notifyChanged()
+            return
+        }
+
+        guard let lastBrowserBundleIdentifier,
+              !availableBundleIdentifiers.contains(lastBrowserBundleIdentifier)
+        else {
+            return
+        }
+
+        resetRememberedBrowserChoice()
     }
 
     private func notifyChanged() {
