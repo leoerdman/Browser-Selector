@@ -9,7 +9,7 @@ final class BrowserRepository {
     }
 
     func installedBrowsers() -> [Browser] {
-        let ownBundleIdentifier = Bundle.main.bundleIdentifier
+        let ownBundleIdentifier = AppMetadata.bundleIdentifier
         let applicationURLs = BrowserSelectorConstants.webURLSchemes
             .compactMap { URL(string: "\($0)://browser-selector.local") }
             .flatMap { workspace.urlsForApplications(toOpen: $0) }
@@ -39,6 +39,13 @@ final class BrowserRepository {
         }
 
         let displayName = localizedName(for: bundle, bundleURL: bundleURL)
+        guard BrowserClassifier.isBrowser(
+            bundleIdentifier: bundleIdentifier,
+            displayName: displayName
+        ) else {
+            return nil
+        }
+
         let icon = workspace.icon(forFile: bundleURL.path)
         icon.size = NSSize(width: 36, height: 36)
 

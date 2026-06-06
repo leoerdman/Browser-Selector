@@ -8,11 +8,14 @@ enum BrowserChoiceResult {
 
 final class BrowserChoiceWindowController: NSWindowController {
     private enum Layout {
-        static let windowWidth: CGFloat = 560
-        static let horizontalPadding: CGFloat = 22
+        static let minWindowWidth: CGFloat = 420
+        static let maxWindowWidth: CGFloat = 920
+        static let horizontalPadding: CGFloat = 20
         static let verticalPadding: CGFloat = 18
-        static let rowHeight: CGFloat = 54
-        static let maxVisibleRows = 6
+        static let tileWidth: CGFloat = 104
+        static let tileHeight: CGFloat = 104
+        static let tileSpacing: CGFloat = 10
+        static let windowHeight: CGFloat = 248
     }
 
     private let url: URL
@@ -20,14 +23,12 @@ final class BrowserChoiceWindowController: NSWindowController {
     private let preferences: Preferences
     private let completion: (BrowserChoiceResult) -> Void
 
-    private let tableView = NSTableView()
-    private let openButton = NSButton(title: "Открыть", target: nil, action: nil)
-    private let cancelButton = NSButton(title: "Отмена", target: nil, action: nil)
     private let rememberSelectionCheckbox = NSButton(
-        checkboxWithTitle: "Запоминать выбранный браузер",
+        checkboxWithTitle: "Запомнить",
         target: nil,
         action: nil
     )
+    private let defaultHintLabel = NSTextField(labelWithString: "")
 
     private var didComplete = false
 
@@ -38,28 +39,36 @@ final class BrowserChoiceWindowController: NSWindowController {
         completion: @escaping (BrowserChoiceResult) -> Void
     ) {
         self.url = url
-        self.browsers = browsers
+        self.browsers = Self.orderedBrowsers(browsers, preferences: preferences)
         self.preferences = preferences
         self.completion = completion
 
-        let visibleRows = max(1, min(browsers.count, Layout.maxVisibleRows))
-        let windowHeight = CGFloat(visibleRows) * Layout.rowHeight + 178
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: Layout.windowWidth, height: windowHeight),
-            styleMask: [.titled, .closable],
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: Self.windowWidth(forBrowserCount: browsers.count),
+                height: Layout.windowHeight
+            ),
+            styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = "Browser Selector"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
         window.level = .floating
         window.collectionBehavior = [.moveToActiveSpace, .transient]
+        window.standardWindowButton(.closeButton)?.isHidden = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
 
         super.init(window: window)
 
         window.delegate = self
         buildInterface()
-        selectInitialBrowser()
     }
 
     @available(*, unavailable)
@@ -83,153 +92,160 @@ final class BrowserChoiceWindowController: NSWindowController {
         }
 
         let rootView = NSVisualEffectView()
-        rootView.material = .windowBackground
-        rootView.blendingMode = .withinWindow
+        rootView.material = .hudWindow
+        rootView.blendingMode = .behindWindow
         rootView.state = .active
         rootView.translatesAutoresizingMaskIntoConstraints = false
         window.contentView = rootView
 
-        let titleLabel = NSTextField(labelWithString: "Открыть ссылку через")
-        titleLabel.font = .systemFont(ofSize: 22, weight: .semibold)
+        let titleLabel = NSTextField(labelWithString: "Открыть через")
+        titleLabel.font = .systemFont(ofSize: 20, weight: .semibold)
         titleLabel.lineBreakMode = .byTruncatingTail
 
-        let urlLabel = NSTextField(wrappingLabelWithString: displayText(for: url))
-        urlLabel.font = .systemFont(ofSize: 13, weight: .regular)
+        let urlLabel = NSTextField(labelWithString: displayText(for: url))
+        urlLabel.font = .systemFont(ofSize: 12, weight: .regular)
         urlLabel.textColor = .secondaryLabelColor
-        urlLabel.maximumNumberOfLines = 2
         urlLabel.lineBreakMode = .byTruncatingMiddle
+        urlLabel.maximumNumberOfLines = 1
 
         let headerStack = NSStackView(views: [titleLabel, urlLabel])
         headerStack.orientation = .vertical
         headerStack.alignment = .leading
-        headerStack.spacing = 4
+        headerStack.spacing = 3
         headerStack.translatesAutoresizingMaskIntoConstraints = false
 
-        configureTableView()
-
-        let scrollView = NSScrollView()
-        scrollView.borderType = .noBorder
-        scrollView.hasVerticalScroller = browsers.count > Layout.maxVisibleRows
-        scrollView.autohidesScrollers = true
-        scrollView.documentView = tableView
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        let browserStrip = makeBrowserStrip()
 
         rememberSelectionCheckbox.state = preferences.rememberLastBrowser ? .on : .off
-        rememberSelectionCheckbox.font = .systemFont(ofSize: 12)
+        rememberSelectionCheckbox.font = .systemFont(ofSize: 11, weight: .regular)
         rememberSelectionCheckbox.target = self
         rememberSelectionCheckbox.action = #selector(rememberSelectionDidChange)
 
-        cancelButton.target = self
-        cancelButton.action = #selector(cancel)
-        cancelButton.keyEquivalent = "\u{1b}"
+        defaultHintLabel.font = .systemFont(ofSize: 11, weight: .regular)
+        defaultHintLabel.textColor = .tertiaryLabelColor
+        updateDefaultHint()
 
-        openButton.target = self
-        openButton.action = #selector(openSelectedBrowser)
-        openButton.keyEquivalent = "\r"
-        openButton.bezelStyle = .rounded
-        openButton.isEnabled = !browsers.isEmpty
-
-        let footerButtons = NSStackView(views: [cancelButton, openButton])
-        footerButtons.orientation = .horizontal
-        footerButtons.alignment = .centerY
-        footerButtons.spacing = 8
-
-        let footerStack = NSStackView(views: [rememberSelectionCheckbox, NSView(), footerButtons])
+        let footerStack = NSStackView(views: [rememberSelectionCheckbox, defaultHintLabel, NSView()])
         footerStack.orientation = .horizontal
         footerStack.alignment = .centerY
-        footerStack.spacing = 12
-        footerStack.distribution = .fill
+        footerStack.spacing = 8
         footerStack.translatesAutoresizingMaskIntoConstraints = false
 
-        let rootStack = NSStackView(views: [headerStack, scrollView, footerStack])
+        let rootStack = NSStackView(views: [headerStack, browserStrip, footerStack])
         rootStack.orientation = .vertical
         rootStack.alignment = .leading
-        rootStack.spacing = 14
+        rootStack.spacing = 18
         rootStack.translatesAutoresizingMaskIntoConstraints = false
         rootView.addSubview(rootStack)
-
-        let visibleRows = max(1, min(browsers.count, Layout.maxVisibleRows))
-        let tableHeight = CGFloat(visibleRows) * Layout.rowHeight
 
         NSLayoutConstraint.activate([
             rootStack.leadingAnchor.constraint(equalTo: rootView.leadingAnchor, constant: Layout.horizontalPadding),
             rootStack.trailingAnchor.constraint(equalTo: rootView.trailingAnchor, constant: -Layout.horizontalPadding),
-            rootStack.topAnchor.constraint(equalTo: rootView.topAnchor, constant: Layout.verticalPadding),
+            rootStack.topAnchor.constraint(equalTo: rootView.topAnchor, constant: Layout.verticalPadding + 6),
             rootStack.bottomAnchor.constraint(equalTo: rootView.bottomAnchor, constant: -Layout.verticalPadding),
 
             headerStack.widthAnchor.constraint(equalTo: rootStack.widthAnchor),
-            scrollView.widthAnchor.constraint(equalTo: rootStack.widthAnchor),
-            scrollView.heightAnchor.constraint(equalToConstant: tableHeight),
+            browserStrip.widthAnchor.constraint(equalTo: rootStack.widthAnchor),
+            browserStrip.heightAnchor.constraint(equalToConstant: Layout.tileHeight),
             footerStack.widthAnchor.constraint(equalTo: rootStack.widthAnchor)
         ])
-
-        window.defaultButtonCell = openButton.cell as? NSButtonCell
     }
 
-    private func configureTableView() {
-        tableView.headerView = nil
-        tableView.rowHeight = Layout.rowHeight
-        tableView.intercellSpacing = NSSize(width: 0, height: 0)
-        tableView.allowsMultipleSelection = false
-        tableView.allowsEmptySelection = false
-        tableView.dataSource = self
-        tableView.delegate = self
-        tableView.target = self
-        tableView.doubleAction = #selector(openSelectedBrowser)
-        tableView.backgroundColor = .clear
-        tableView.selectionHighlightStyle = .regular
+    private func makeBrowserStrip() -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = false
+        scrollView.hasHorizontalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
 
-        let column = NSTableColumn(identifier: BrowserCellView.reuseIdentifier)
-        column.resizingMask = .autoresizingMask
-        tableView.addTableColumn(column)
-    }
+        let contentWidth = browserStripContentWidth()
+        let documentView = NSView(
+            frame: NSRect(
+                x: 0,
+                y: 0,
+                width: contentWidth,
+                height: Layout.tileHeight
+            )
+        )
 
-    private func selectInitialBrowser() {
-        guard !browsers.isEmpty else {
-            return
+        let stackView = NSStackView()
+        stackView.orientation = .horizontal
+        stackView.alignment = .top
+        stackView.spacing = Layout.tileSpacing
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        documentView.addSubview(stackView)
+
+        let rememberedBrowserIdentifier = preferences.rememberLastBrowser
+            ? preferences.lastBrowserBundleIdentifier
+            : nil
+
+        for (index, browser) in browsers.enumerated() {
+            let button = BrowserTileButton(browser: browser)
+            button.tag = index
+            button.target = self
+            button.action = #selector(browserTileDidClick(_:))
+            button.isDefaultChoice = browser.bundleIdentifier == rememberedBrowserIdentifier
+
+            stackView.addArrangedSubview(button)
+            NSLayoutConstraint.activate([
+                button.widthAnchor.constraint(equalToConstant: Layout.tileWidth),
+                button.heightAnchor.constraint(equalToConstant: Layout.tileHeight)
+            ])
         }
 
-        let selectedIndex: Int
-        if preferences.rememberLastBrowser,
-           let lastBrowserBundleIdentifier = preferences.lastBrowserBundleIdentifier,
-           let index = browsers.firstIndex(where: { $0.bundleIdentifier == lastBrowserBundleIdentifier }) {
-            selectedIndex = index
-        } else {
-            selectedIndex = 0
-        }
+        NSLayoutConstraint.activate([
+            stackView.leadingAnchor.constraint(equalTo: documentView.leadingAnchor),
+            stackView.trailingAnchor.constraint(equalTo: documentView.trailingAnchor),
+            stackView.topAnchor.constraint(equalTo: documentView.topAnchor),
+            stackView.heightAnchor.constraint(equalToConstant: Layout.tileHeight)
+        ])
 
-        tableView.selectRowIndexes(IndexSet(integer: selectedIndex), byExtendingSelection: false)
-        tableView.scrollRowToVisible(selectedIndex)
+        scrollView.documentView = documentView
+        return scrollView
     }
 
     private func displayText(for url: URL) -> String {
         if let host = url.host, !host.isEmpty {
-            return "\(host)  ·  \(url.absoluteString)"
+            return "\(host) · \(url.absoluteString)"
         }
 
         return url.absoluteString
     }
 
-    @objc private func rememberSelectionDidChange() {
-        preferences.rememberLastBrowser = rememberSelectionCheckbox.state == .on
+    private func browserStripContentWidth() -> CGFloat {
+        let browserCount = CGFloat(max(browsers.count, 1))
+        return browserCount * Layout.tileWidth + max(0, browserCount - 1) * Layout.tileSpacing
     }
 
-    @objc private func openSelectedBrowser() {
-        let selectedRow = tableView.selectedRow
-        guard browsers.indices.contains(selectedRow) else {
+    @objc private func rememberSelectionDidChange() {
+        preferences.rememberLastBrowser = rememberSelectionCheckbox.state == .on
+
+        if rememberSelectionCheckbox.state == .off {
+            preferences.lastBrowserBundleIdentifier = nil
+        }
+
+        updateDefaultHint()
+    }
+
+    @objc private func browserTileDidClick(_ sender: BrowserTileButton) {
+        guard browsers.indices.contains(sender.tag) else {
             return
         }
 
         complete(
             .open(
-                browser: browsers[selectedRow],
+                browser: browsers[sender.tag],
                 rememberSelection: rememberSelectionCheckbox.state == .on
             )
         )
     }
 
-    @objc private func cancel() {
-        complete(.cancel)
+    private func updateDefaultHint() {
+        defaultHintLabel.stringValue = rememberSelectionCheckbox.state == .on
+            ? "следующий выбор станет браузером по умолчанию"
+            : "по умолчанию: не запоминать"
     }
 
     private func complete(_ result: BrowserChoiceResult) {
@@ -241,33 +257,25 @@ final class BrowserChoiceWindowController: NSWindowController {
         completion(result)
         close()
     }
-}
 
-extension BrowserChoiceWindowController: NSTableViewDataSource, NSTableViewDelegate {
-    func numberOfRows(in tableView: NSTableView) -> Int {
-        browsers.count
-    }
-
-    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-        Layout.rowHeight
-    }
-
-    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        guard browsers.indices.contains(row) else {
-            return nil
+    private static func orderedBrowsers(_ browsers: [Browser], preferences: Preferences) -> [Browser] {
+        guard preferences.rememberLastBrowser,
+              let lastBrowserBundleIdentifier = preferences.lastBrowserBundleIdentifier,
+              let rememberedBrowser = browsers.first(where: { $0.bundleIdentifier == lastBrowserBundleIdentifier })
+        else {
+            return browsers
         }
 
-        let cell = tableView.makeView(
-            withIdentifier: BrowserCellView.reuseIdentifier,
-            owner: self
-        ) as? BrowserCellView ?? BrowserCellView()
-
-        cell.configure(with: browsers[row])
-        return cell
+        return [rememberedBrowser] + browsers.filter { $0.bundleIdentifier != lastBrowserBundleIdentifier }
     }
 
-    func tableViewSelectionDidChange(_ notification: Notification) {
-        openButton.isEnabled = tableView.selectedRow >= 0
+    private static func windowWidth(forBrowserCount browserCount: Int) -> CGFloat {
+        let contentWidth = CGFloat(max(browserCount, 1)) * Layout.tileWidth
+            + CGFloat(max(browserCount - 1, 0)) * Layout.tileSpacing
+            + Layout.horizontalPadding * 2
+
+        let screenLimit = NSScreen.main.map { $0.visibleFrame.width * 0.82 } ?? Layout.maxWindowWidth
+        return min(max(contentWidth, Layout.minWindowWidth), min(Layout.maxWindowWidth, screenLimit))
     }
 }
 

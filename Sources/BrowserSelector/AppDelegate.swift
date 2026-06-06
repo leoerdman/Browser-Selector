@@ -20,6 +20,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         delegate: self
     )
 
+    private var defaultBrowserMonitor: DispatchSourceTimer?
+    private var defaultBrowserMonitorAttempts = 0
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
@@ -91,14 +94,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func registerAsDefaultBrowser() {
         do {
-            try registrationService.registerAsDefaultBrowser()
+            let registrationState = try registrationService.requestDefaultBrowserRegistration()
             menuBarController.refreshMenu()
 
-            if !registrationService.isDefaultBrowser {
-                UserNotifier.showInfo(
-                    title: "Подтвердите выбор в macOS",
-                    message: "Если macOS показала системный запрос, подтвердите смену браузера по умолчанию. После этого все ссылки будут попадать в Browser Selector."
-                )
+            switch registrationState {
+            case .alreadyDefault:
+                stopDefaultBrowserMonitor()
+            case .requestedSystemConfirmation:
+                startDefaultBrowserMonitor()
             }
         } catch {
             menuBarController.refreshMenu()
@@ -107,6 +110,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 message: error.localizedDescription
             )
         }
+    }
+
+    private func startDefaultBrowserMonitor() {
+        stopDefaultBrowserMonitor()
+        defaultBrowserMonitorAttempts = 0
+
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 1, repeating: 1)
+        timer.setEventHandler { [weak self] in
+            self?.pollDefaultBrowserStatus()
+        }
+        defaultBrowserMonitor = timer
+        timer.resume()
+    }
+
+    private func pollDefaultBrowserStatus() {
+        defaultBrowserMonitorAttempts += 1
+        menuBarController.refreshMenu()
+
+        if registrationService.isDefaultBrowser {
+            stopDefaultBrowserMonitor()
+            return
+        }
+
+        if defaultBrowserMonitorAttempts == 3 {
+            do {
+                _ = try registrationService.requestDefaultBrowserRegistration()
+            } catch {
+                stopDefaultBrowserMonitor()
+                UserNotifier.showError(
+                    title: "Не удалось завершить назначение",
+                    message: error.localizedDescription
+                )
+            }
+            return
+        }
+
+        guard defaultBrowserMonitorAttempts >= 20 else {
+            return
+        }
+
+        stopDefaultBrowserMonitor()
+        UserNotifier.showInfo(
+            title: "Browser Selector не назначен",
+            message: "macOS не применила смену браузера по умолчанию. В строке меню можно повторить назначение, если в системном окне был выбран текущий браузер."
+        )
+    }
+
+    private func stopDefaultBrowserMonitor() {
+        defaultBrowserMonitor?.cancel()
+        defaultBrowserMonitor = nil
+        defaultBrowserMonitorAttempts = 0
+        menuBarController.refreshMenu()
     }
 }
 
@@ -130,7 +186,7 @@ extension AppDelegate: MenuBarControllerDelegate {
     func menuBarControllerDidRequestAbout(_ controller: MenuBarController) {
         UserNotifier.showInfo(
             title: "Browser Selector",
-            message: "Нативная macOS-утилита для выбора браузера перед открытием ссылок.\n\nВерсия \(BrowserSelectorConstants.version)"
+            message: "Нативная macOS-утилита для выбора браузера перед открытием ссылок.\n\nВерсия \(AppMetadata.version)"
         )
     }
 }

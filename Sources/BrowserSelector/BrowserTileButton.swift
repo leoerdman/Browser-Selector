@@ -1,0 +1,145 @@
+import AppKit
+
+final class BrowserTileButton: NSControl {
+    var isDefaultChoice = false {
+        didSet {
+            defaultLabel.isHidden = !isDefaultChoice
+        }
+    }
+
+    private let browser: Browser
+    private let iconView = NSImageView()
+    private let nameLabel = NSTextField(labelWithString: "")
+    private let defaultLabel = NSTextField(labelWithString: "по умолчанию")
+    private var trackingArea: NSTrackingArea?
+    private var isHovering = false
+    private var isPressed = false
+
+    init(browser: Browser) {
+        self.browser = browser
+        super.init(frame: .zero)
+        setup()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override var acceptsFirstResponder: Bool {
+        true
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+
+        if let trackingArea {
+            removeTrackingArea(trackingArea)
+        }
+
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .inVisibleRect, .mouseEnteredAndExited],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovering = true
+        updateAppearance()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovering = false
+        isPressed = false
+        updateAppearance()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        isPressed = true
+        updateAppearance()
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        defer {
+            isPressed = false
+            updateAppearance()
+        }
+
+        guard bounds.contains(convert(event.locationInWindow, from: nil)) else {
+            return
+        }
+
+        sendAction(action, to: target)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        guard event.characters == " " || event.characters == "\r" else {
+            super.keyDown(with: event)
+            return
+        }
+
+        sendAction(action, to: target)
+    }
+
+    private func setup() {
+        wantsLayer = true
+        layer?.cornerRadius = 10
+        layer?.masksToBounds = true
+        toolTip = browser.displayName
+
+        iconView.image = browser.icon
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+
+        nameLabel.stringValue = browser.displayName
+        nameLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        nameLabel.alignment = .center
+        nameLabel.maximumNumberOfLines = 2
+        nameLabel.lineBreakMode = .byTruncatingTail
+        nameLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        defaultLabel.font = .systemFont(ofSize: 9, weight: .regular)
+        defaultLabel.textColor = .tertiaryLabelColor
+        defaultLabel.alignment = .center
+        defaultLabel.isHidden = true
+        defaultLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(iconView)
+        addSubview(nameLabel)
+        addSubview(defaultLabel)
+
+        NSLayoutConstraint.activate([
+            iconView.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            iconView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 46),
+            iconView.heightAnchor.constraint(equalToConstant: 46),
+
+            nameLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            nameLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            nameLabel.topAnchor.constraint(equalTo: iconView.bottomAnchor, constant: 7),
+
+            defaultLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
+            defaultLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+            defaultLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 1)
+        ])
+
+        updateAppearance()
+    }
+
+    private func updateAppearance() {
+        let color: NSColor
+        if isPressed {
+            color = .controlAccentColor.withAlphaComponent(0.32)
+        } else if isHovering {
+            color = .controlAccentColor.withAlphaComponent(0.18)
+        } else {
+            color = .clear
+        }
+
+        layer?.backgroundColor = color.cgColor
+    }
+}

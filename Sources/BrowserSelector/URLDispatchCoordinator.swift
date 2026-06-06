@@ -70,6 +70,8 @@ final class URLDispatchCoordinator {
         case let .open(browser, rememberSelection):
             if rememberSelection {
                 preferences.lastBrowserBundleIdentifier = browser.bundleIdentifier
+            } else {
+                preferences.lastBrowserBundleIdentifier = nil
             }
 
             browserLauncher.open(url, in: browser) { [weak self] openResult in
