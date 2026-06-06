@@ -53,7 +53,7 @@ final class BrowserLauncher {
         }
 
         runAppleScript(
-            chromiumNewTabScript(
+            BrowserLaunchScriptFactory.chromiumNewTabScript(
                 bundleIdentifier: browser.bundleIdentifier,
                 urlString: url.absoluteString
             ),
@@ -67,7 +67,7 @@ final class BrowserLauncher {
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
         runAppleScript(
-            openLocationScript(
+            BrowserLaunchScriptFactory.openLocationScript(
                 bundleIdentifier: browser.bundleIdentifier,
                 urlString: url.absoluteString
             ),
@@ -179,45 +179,6 @@ final class BrowserLauncher {
         return .requireUserAction(error)
     }
 
-    private func chromiumNewTabScript(bundleIdentifier: String, urlString: String) -> String {
-        let browserID = Self.appleScriptLiteral(bundleIdentifier)
-        let targetURL = Self.appleScriptLiteral(urlString)
-
-        return """
-        using terms from application id \(browserID)
-        tell application id \(browserID)
-            activate
-            if (count of windows) = 0 then make new window
-            tell front window
-                set newTab to make new tab at end of tabs with properties {URL:\(targetURL)}
-                set active tab index to (count of tabs)
-            end tell
-        end tell
-        end using terms from
-        """
-    }
-
-    private func openLocationScript(bundleIdentifier: String, urlString: String) -> String {
-        let browserID = Self.appleScriptLiteral(bundleIdentifier)
-        let targetURL = Self.appleScriptLiteral(urlString)
-
-        return """
-        tell application id \(browserID)
-            activate
-            open location \(targetURL)
-        end tell
-        """
-    }
-
-    private static func appleScriptLiteral(_ value: String) -> String {
-        let escapedValue = value
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\r", with: "\\r")
-            .replacingOccurrences(of: "\n", with: "\\n")
-
-        return "\"\(escapedValue)\""
-    }
 }
 
 private extension Browser {

@@ -14,6 +14,11 @@ let package = Package(
         .executableTarget(
             name: "BrowserSelector",
             path: "Sources/BrowserSelector"
+        ),
+        .testTarget(
+            name: "BrowserSelectorTests",
+            dependencies: ["BrowserSelector"],
+            path: "Tests/BrowserSelectorTests"
         )
     ]
 )

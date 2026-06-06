@@ -137,17 +137,17 @@ final class BrowserTileButton: NSControl {
         let borderWidth: CGFloat
 
         if isPressed {
-            backgroundColor = .separatorColor.withAlphaComponent(0.34)
+            backgroundColor = .grayscaleTileFill(alpha: 0.26)
         } else if isHovering || isKeyboardSelected {
-            backgroundColor = .separatorColor.withAlphaComponent(0.22)
+            backgroundColor = .grayscaleTileFill(alpha: 0.18)
         } else if isDefaultChoice {
-            backgroundColor = .separatorColor.withAlphaComponent(0.14)
+            backgroundColor = .grayscaleTileFill(alpha: 0.12)
         } else {
             backgroundColor = .clear
         }
 
         if isDefaultChoice {
-            borderColor = .separatorColor.withAlphaComponent(0.72)
+            borderColor = .grayscaleTileBorder(alpha: 0.38)
             borderWidth = 1
         } else {
             borderColor = .clear
@@ -157,5 +157,15 @@ final class BrowserTileButton: NSControl {
         layer?.backgroundColor = backgroundColor.cgColor
         layer?.borderColor = borderColor.cgColor
         layer?.borderWidth = borderWidth
+    }
+}
+
+private extension NSColor {
+    static func grayscaleTileFill(alpha: CGFloat) -> NSColor {
+        NSColor(calibratedWhite: 1.0, alpha: alpha)
+    }
+
+    static func grayscaleTileBorder(alpha: CGFloat) -> NSColor {
+        NSColor(calibratedWhite: 1.0, alpha: alpha)
     }
 }

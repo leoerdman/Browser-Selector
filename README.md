@@ -8,6 +8,7 @@
 - Получение ссылок через стандартный Apple Event `kAEGetURL`.
 - Поиск браузеров через LaunchServices, без ручных списков и костылей.
 - Минималистичный горизонтальный chooser: только браузеры и подписи, без скролла и лишнего текста.
+- `Esc` закрывает chooser и отменяет переход по ссылке.
 - Для Chrome/Chromium-браузеров ссылка открывается новой вкладкой в последнем активном окне.
 - Menu bar приложение без лишней иконки в Dock.
 - Один источник правды для настроек: `Preferences`.
@@ -50,7 +51,7 @@ CODE_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./Scripts/buil
 ./Scripts/validate.sh
 ```
 
-Скрипт проверяет `Info.plist`, URL schemes, Apple Events usage description, сборку `.app` и подпись.
+Скрипт проверяет `Info.plist`, URL schemes, Apple Events usage description, XCTest, сборку `.app` и подпись.
 
 ## Использование
 

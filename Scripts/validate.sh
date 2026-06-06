@@ -22,9 +22,11 @@ if ! /usr/libexec/PlistBuddy -c "Print :NSAppleEventsUsageDescription" "${INFO_P
     exit 1
 fi
 
+swift test
+
 "${ROOT_DIR}/Scripts/build.sh"
 
 plutil -lint "${BUILT_INFO_PLIST}" >/dev/null
 codesign --verify --deep --strict --verbose=2 "${APP_DIR}" >/dev/null
 
-echo "Validation passed: plist, URL schemes, Apple Events usage, build, codesign."
+echo "Validation passed: plist, URL schemes, Apple Events usage, tests, build, codesign."

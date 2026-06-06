@@ -57,6 +57,9 @@ final class BrowserChoiceWindowController: NSWindowController {
         window.title = "Browser Selector"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = true
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
         window.level = .floating
@@ -103,10 +106,7 @@ final class BrowserChoiceWindowController: NSWindowController {
         window.contentView = rootView
         rootView.menu = contextMenu
 
-        let backgroundView = NSVisualEffectView()
-        backgroundView.material = .hudWindow
-        backgroundView.blendingMode = .withinWindow
-        backgroundView.state = .active
+        let backgroundView = GrayscalePanelBackgroundView()
         backgroundView.translatesAutoresizingMaskIntoConstraints = false
         rootView.addSubview(backgroundView)
 
@@ -335,12 +335,38 @@ private final class BrowserChoiceWindow: NSWindow {
     var onCancel: (() -> Void)?
     var onKeyDown: ((NSEvent) -> Bool)?
 
+    override var canBecomeKey: Bool {
+        true
+    }
+
+    override var canBecomeMain: Bool {
+        true
+    }
+
     override func cancelOperation(_ sender: Any?) {
         onCancel?()
     }
 
+    override func sendEvent(_ event: NSEvent) {
+        guard event.type == .keyDown else {
+            super.sendEvent(event)
+            return
+        }
+
+        if event.isEscapeKey {
+            onCancel?()
+            return
+        }
+
+        if onKeyDown?(event) == true {
+            return
+        }
+
+        super.sendEvent(event)
+    }
+
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 {
+        if event.isEscapeKey {
             onCancel?()
             return
         }
@@ -350,5 +376,45 @@ private final class BrowserChoiceWindow: NSWindow {
         }
 
         super.keyDown(with: event)
+    }
+}
+
+private extension NSEvent {
+    var isEscapeKey: Bool {
+        keyCode == 53 || charactersIgnoringModifiers == "\u{1B}"
+    }
+}
+
+private final class GrayscalePanelBackgroundView: NSView {
+    private enum Palette {
+        static let darkBackground = NSColor(calibratedWhite: 0.20, alpha: 0.70)
+        static let lightBackground = NSColor(calibratedWhite: 0.88, alpha: 0.70)
+        static let darkBorder = NSColor(calibratedWhite: 1.00, alpha: 0.16)
+        static let lightBorder = NSColor(calibratedWhite: 0.00, alpha: 0.18)
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = 15
+        layer?.masksToBounds = true
+        layer?.borderWidth = 1
+        updateColors()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateColors()
+    }
+
+    private func updateColors() {
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        layer?.backgroundColor = (isDark ? Palette.darkBackground : Palette.lightBackground).cgColor
+        layer?.borderColor = (isDark ? Palette.darkBorder : Palette.lightBorder).cgColor
     }
 }
