@@ -18,7 +18,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Show toolchain
         run: |
@@ -32,7 +32,7 @@ jobs:
         run: ./Scripts/build.sh
 
       - name: Upload app artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Browser Selector.app
           path: dist/Browser Selector.app
