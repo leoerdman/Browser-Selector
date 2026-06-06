@@ -7,7 +7,7 @@
 - URL handler для `http` и `https` через `CFBundleURLTypes`.
 - Получение ссылок через стандартный Apple Event `kAEGetURL`.
 - Поиск браузеров через LaunchServices, без ручных списков и костылей.
-- Минималистичный горизонтальный chooser: только браузеры, подписи и `Remember this choice`.
+- Минималистичный горизонтальный chooser: только браузеры и подписи, без скролла и лишнего текста.
 - Для Chrome/Chromium-браузеров ссылка открывается новой вкладкой в последнем активном окне.
 - Menu bar приложение без лишней иконки в Dock.
 - Один источник правды для настроек: `Preferences`.
@@ -44,13 +44,21 @@ dist/Browser Selector.app
 CODE_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./Scripts/build.sh
 ```
 
+## Проверка
+
+```bash
+./Scripts/validate.sh
+```
+
+Скрипт проверяет `Info.plist`, URL schemes, Apple Events usage description, сборку `.app` и подпись.
+
 ## Использование
 
 - Иконка приложения находится в строке меню.
 - Пункт `Назначить браузером по умолчанию` делает приложение обработчиком `http` и `https`.
 - Пункт `Проверить окно выбора` открывает тестовый chooser без необходимости искать ссылку в другом приложении.
-- `Remember this choice` по умолчанию выключен. Если включить его, последний выбранный браузер будет показан первым.
-- Right-click по панели выбора открывает `Reset remembered choice`, который очищает сохраненный браузер и выключает remember.
+- В menu bar есть `Remember Browser Choice`. Если включить его, следующий выбранный браузер станет `Default Choice`.
+- Menu bar показывает текущий `Default Choice` и позволяет сбросить его через `Reset Remembered Choice`.
 
 ## Требования
 

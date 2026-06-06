@@ -28,8 +28,8 @@ jobs:
       - name: Build Swift package
         run: swift build -c release
 
-      - name: Build signed app bundle
-        run: ./Scripts/build.sh
+      - name: Validate signed app bundle
+        run: ./Scripts/validate.sh
 
       - name: Upload app artifact
         uses: actions/upload-artifact@v7

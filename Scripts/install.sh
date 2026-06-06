@@ -12,8 +12,13 @@ BUNDLE_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${R
 "${ROOT_DIR}/Scripts/build.sh"
 
 mkdir -p "${INSTALL_DIR}"
-osascript -e "tell application id \"${BUNDLE_IDENTIFIER}\" to quit" >/dev/null 2>&1 || true
-sleep 0.5
+if /usr/bin/pgrep -x "${BUNDLE_IDENTIFIER##*.}" >/dev/null 2>&1; then
+    /usr/bin/pkill -TERM -x "${BUNDLE_IDENTIFIER##*.}" >/dev/null 2>&1 || true
+    for _ in {1..20}; do
+        /usr/bin/pgrep -x "${BUNDLE_IDENTIFIER##*.}" >/dev/null 2>&1 || break
+        sleep 0.1
+    done
+fi
 ditto "${SOURCE_APP}" "${TARGET_APP}"
 
 if [[ -x "${LSREGISTER}" ]]; then

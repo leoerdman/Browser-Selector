@@ -70,8 +70,14 @@ enum BrowserClassifier {
             return true
         }
 
-        let normalizedName = displayName.lowercased()
-        return acceptedNameTokens.contains { normalizedName.contains($0) }
+        let nameTokens = Set(
+            displayName
+                .lowercased()
+                .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .filter { !$0.isEmpty }
+        )
+
+        return acceptedNameTokens.contains { nameTokens.contains($0) }
     }
 
     static func isChromiumLike(bundleIdentifier: String) -> Bool {

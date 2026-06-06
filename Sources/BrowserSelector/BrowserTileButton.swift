@@ -11,6 +11,12 @@ final class BrowserTileButton: NSControl {
         }
     }
 
+    var isKeyboardSelected = false {
+        didSet {
+            updateAppearance()
+        }
+    }
+
     private let browser: Browser
     private let iconView = NSImageView()
     private let nameLabel = NSTextField(labelWithString: "")
@@ -93,6 +99,9 @@ final class BrowserTileButton: NSControl {
         layer?.cornerRadius = 10
         layer?.masksToBounds = true
         toolTip = browser.displayName
+        setAccessibilityRole(.button)
+        setAccessibilityLabel("Open in \(browser.displayName)")
+        setAccessibilityHelp("Opens the current link in \(browser.displayName).")
 
         iconView.image = browser.icon
         iconView.imageScaling = .scaleProportionallyUpOrDown
@@ -129,7 +138,7 @@ final class BrowserTileButton: NSControl {
 
         if isPressed {
             backgroundColor = .separatorColor.withAlphaComponent(0.34)
-        } else if isHovering {
+        } else if isHovering || isKeyboardSelected {
             backgroundColor = .separatorColor.withAlphaComponent(0.22)
         } else if isDefaultChoice {
             backgroundColor = .separatorColor.withAlphaComponent(0.14)

@@ -30,21 +30,16 @@ chmod +x "${MACOS_DIR}/${BINARY_NAME}"
 plutil -lint "${CONTENTS_DIR}/Info.plist" >/dev/null
 
 if [[ -z "${SIGN_IDENTITY}" ]]; then
-    SIGN_IDENTITY="$(
-        security find-identity -v -p codesigning 2>/dev/null \
-            | awk -F '"' '
-                /Developer ID Application:/ { print $2; exit }
-                /Apple Development:/ && apple == "" { apple = $2 }
-                /"/ && first == "" { first = $2 }
-                END {
-                    if (apple != "") {
-                        print apple
-                    } else if (first != "") {
-                        print first
-                    }
-                }
-            '
-    )"
+    IDENTITY_LIST="$(security find-identity -v -p codesigning 2>/dev/null || true)"
+    SIGN_IDENTITY="$(printf '%s\n' "${IDENTITY_LIST}" | awk -F '"' '/Developer ID Application:/ { print $2; exit }')"
+
+    if [[ -z "${SIGN_IDENTITY}" ]]; then
+        SIGN_IDENTITY="$(printf '%s\n' "${IDENTITY_LIST}" | awk -F '"' '/Apple Development:/ { print $2; exit }')"
+    fi
+
+    if [[ -z "${SIGN_IDENTITY}" ]]; then
+        SIGN_IDENTITY="$(printf '%s\n' "${IDENTITY_LIST}" | awk -F '"' '/"/ { print $2; exit }')"
+    fi
 fi
 
 if [[ -z "${SIGN_IDENTITY}" || "${SIGN_IDENTITY}" == "-" ]]; then

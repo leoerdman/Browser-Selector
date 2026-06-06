@@ -40,16 +40,16 @@ final class URLDispatchCoordinator {
 
         let browsers = browserRepository.installedBrowsers()
         guard !browsers.isEmpty else {
-            finishActiveURL()
             UserNotifier.showError(
                 title: "Браузеры не найдены",
                 message: "LaunchServices не вернул ни одного приложения, которое умеет открывать web-ссылки."
-            )
+            ) { [weak self] in
+                self?.finishActiveURL()
+            }
             return
         }
 
         let windowController = BrowserChoiceWindowController(
-            url: url,
             browsers: browsers,
             preferences: preferences
         ) { [weak self] result in
@@ -67,11 +67,9 @@ final class URLDispatchCoordinator {
         case .cancel:
             finishActiveURL()
 
-        case let .open(browser, rememberSelection):
-            if rememberSelection {
+        case let .open(browser):
+            if preferences.rememberLastBrowser {
                 preferences.lastBrowserBundleIdentifier = browser.bundleIdentifier
-            } else {
-                preferences.lastBrowserBundleIdentifier = nil
             }
 
             browserLauncher.open(url, in: browser) { [weak self] openResult in
@@ -80,11 +78,12 @@ final class URLDispatchCoordinator {
                     case .success:
                         self?.finishActiveURL()
                     case let .failure(error):
-                        self?.finishActiveURL()
                         UserNotifier.showError(
                             title: "Не удалось открыть ссылку",
                             message: "\(browser.displayName): \(error.localizedDescription)"
-                        )
+                        ) {
+                            self?.finishActiveURL()
+                        }
                     }
                 }
             }

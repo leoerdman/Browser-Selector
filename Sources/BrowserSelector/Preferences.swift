@@ -4,6 +4,7 @@ final class Preferences {
     static let shared = Preferences(userDefaults: .standard)
 
     private enum Key: String {
+        case didShowDefaultBrowserPrompt
         case rememberLastBrowser
         case lastBrowserBundleIdentifier
         case rememberDefaultPolicyVersion
@@ -21,7 +22,12 @@ final class Preferences {
             return userDefaults.bool(forKey: Key.rememberLastBrowser.rawValue)
         }
         set {
+            guard rememberLastBrowser != newValue else {
+                return
+            }
+
             userDefaults.set(newValue, forKey: Key.rememberLastBrowser.rawValue)
+            notifyChanged()
         }
     }
 
@@ -30,8 +36,40 @@ final class Preferences {
             userDefaults.string(forKey: Key.lastBrowserBundleIdentifier.rawValue)
         }
         set {
-            userDefaults.set(newValue, forKey: Key.lastBrowserBundleIdentifier.rawValue)
+            guard lastBrowserBundleIdentifier != newValue else {
+                return
+            }
+
+            if let newValue {
+                userDefaults.set(newValue, forKey: Key.lastBrowserBundleIdentifier.rawValue)
+            } else {
+                userDefaults.removeObject(forKey: Key.lastBrowserBundleIdentifier.rawValue)
+            }
+            notifyChanged()
         }
+    }
+
+    var didShowDefaultBrowserPrompt: Bool {
+        get {
+            userDefaults.bool(forKey: Key.didShowDefaultBrowserPrompt.rawValue)
+        }
+        set {
+            guard didShowDefaultBrowserPrompt != newValue else {
+                return
+            }
+
+            userDefaults.set(newValue, forKey: Key.didShowDefaultBrowserPrompt.rawValue)
+            notifyChanged()
+        }
+    }
+
+    func resetRememberedBrowserChoice() {
+        rememberLastBrowser = false
+        lastBrowserBundleIdentifier = nil
+    }
+
+    private func notifyChanged() {
+        NotificationCenter.default.post(name: .browserSelectorPreferencesDidChange, object: self)
     }
 
     private func applyMigrations() {
@@ -49,4 +87,10 @@ final class Preferences {
             forKey: Key.rememberDefaultPolicyVersion.rawValue
         )
     }
+}
+
+extension Notification.Name {
+    static let browserSelectorPreferencesDidChange = Notification.Name(
+        "com.leoerdman.BrowserSelector.preferencesDidChange"
+    )
 }

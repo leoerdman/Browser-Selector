@@ -2,52 +2,52 @@ import AppKit
 import Foundation
 
 enum BrowserChoiceResult {
-    case open(browser: Browser, rememberSelection: Bool)
+    case open(browser: Browser)
     case cancel
 }
 
 final class BrowserChoiceWindowController: NSWindowController {
     private enum Layout {
-        static let minWindowWidth: CGFloat = 360
-        static let maxWindowWidth: CGFloat = 900
-        static let horizontalPadding: CGFloat = 22
-        static let verticalPadding: CGFloat = 16
-        static let tileWidth: CGFloat = 112
-        static let tileHeight: CGFloat = 108
-        static let tileSpacing: CGFloat = 10
-        static let windowHeight: CGFloat = 176
+        static let outerPadding: CGFloat = 12
+        static let preferredTileWidth: CGFloat = 108
+        static let minimumTileWidth: CGFloat = 64
+        static let tileHeight: CGFloat = 96
+        static let tileSpacing: CGFloat = 8
+        static let maxScreenWidthFraction: CGFloat = 0.94
+
+        static var windowHeight: CGFloat {
+            tileHeight + outerPadding * 2
+        }
     }
 
-    private let url: URL
     private let browsers: [Browser]
     private let preferences: Preferences
     private let completion: (BrowserChoiceResult) -> Void
-
-    private let rememberSelectionCheckbox = NSButton(
-        checkboxWithTitle: "Remember this choice",
-        target: nil,
-        action: nil
-    )
+    private let tileWidth: CGFloat
 
     private var browserTileButtons: [BrowserTileButton] = []
+    private lazy var contextMenu = makeResetMenu()
+    private var selectedIndex: Int
     private var didComplete = false
 
     init(
-        url: URL,
         browsers: [Browser],
         preferences: Preferences,
         completion: @escaping (BrowserChoiceResult) -> Void
     ) {
-        self.url = url
-        self.browsers = Self.orderedBrowsers(browsers, preferences: preferences)
+        let orderedBrowsers = Self.orderedBrowsers(browsers, preferences: preferences)
+        let windowMetrics = Self.windowMetrics(forBrowserCount: orderedBrowsers.count)
+        self.browsers = orderedBrowsers
         self.preferences = preferences
         self.completion = completion
+        self.tileWidth = windowMetrics.tileWidth
+        self.selectedIndex = Self.initialSelectedIndex(in: orderedBrowsers, preferences: preferences)
 
         let window = BrowserChoiceWindow(
             contentRect: NSRect(
                 x: 0,
                 y: 0,
-                width: Self.windowWidth(forBrowserCount: browsers.count),
+                width: windowMetrics.windowWidth,
                 height: Layout.windowHeight
             ),
             styleMask: [.titled, .closable, .fullSizeContentView],
@@ -71,7 +71,11 @@ final class BrowserChoiceWindowController: NSWindowController {
         window.onCancel = { [weak self] in
             self?.complete(.cancel)
         }
+        window.onKeyDown = { [weak self] event in
+            self?.handleKeyDown(event) ?? false
+        }
         buildInterface()
+        updateTileSelection()
     }
 
     @available(*, unavailable)
@@ -94,76 +98,65 @@ final class BrowserChoiceWindowController: NSWindowController {
             return
         }
 
-        let rootView = NSVisualEffectView()
-        rootView.material = .hudWindow
-        rootView.blendingMode = .behindWindow
-        rootView.state = .active
+        let rootView = NSView()
         rootView.translatesAutoresizingMaskIntoConstraints = false
         window.contentView = rootView
-        rootView.menu = resetMenu()
+        rootView.menu = contextMenu
+
+        let backgroundView = NSVisualEffectView()
+        backgroundView.material = .hudWindow
+        backgroundView.blendingMode = .withinWindow
+        backgroundView.state = .active
+        backgroundView.translatesAutoresizingMaskIntoConstraints = false
+        rootView.addSubview(backgroundView)
+
+        let contentView = NSView()
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.menu = contextMenu
+        rootView.addSubview(contentView)
 
         let browserStrip = makeBrowserStrip()
 
-        rememberSelectionCheckbox.state = preferences.rememberLastBrowser ? .on : .off
-        rememberSelectionCheckbox.font = .systemFont(ofSize: 12, weight: .regular)
-        rememberSelectionCheckbox.target = self
-        rememberSelectionCheckbox.action = #selector(rememberSelectionDidChange)
-
-        let footerStack = NSStackView(views: [rememberSelectionCheckbox, NSView()])
-        footerStack.orientation = .horizontal
-        footerStack.alignment = .centerY
-        footerStack.spacing = 0
-        footerStack.translatesAutoresizingMaskIntoConstraints = false
-
-        let rootStack = NSStackView(views: [browserStrip, footerStack])
+        let rootStack = NSStackView(views: [browserStrip])
         rootStack.orientation = .vertical
         rootStack.alignment = .leading
-        rootStack.spacing = 12
+        rootStack.spacing = 0
         rootStack.translatesAutoresizingMaskIntoConstraints = false
-        rootView.addSubview(rootStack)
+        contentView.addSubview(rootStack)
 
         NSLayoutConstraint.activate([
-            rootStack.leadingAnchor.constraint(equalTo: rootView.leadingAnchor, constant: Layout.horizontalPadding),
-            rootStack.trailingAnchor.constraint(equalTo: rootView.trailingAnchor, constant: -Layout.horizontalPadding),
-            rootStack.topAnchor.constraint(equalTo: rootView.topAnchor, constant: Layout.verticalPadding),
-            rootStack.bottomAnchor.constraint(equalTo: rootView.bottomAnchor, constant: -Layout.verticalPadding),
+            backgroundView.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
+            backgroundView.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
+            backgroundView.topAnchor.constraint(equalTo: rootView.topAnchor),
+            backgroundView.bottomAnchor.constraint(equalTo: rootView.bottomAnchor),
+
+            contentView.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
+            contentView.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
+            contentView.topAnchor.constraint(equalTo: rootView.topAnchor),
+            contentView.bottomAnchor.constraint(equalTo: rootView.bottomAnchor),
+
+            rootStack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Layout.outerPadding),
+            rootStack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Layout.outerPadding),
+            rootStack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: Layout.outerPadding),
+            rootStack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -Layout.outerPadding),
 
             browserStrip.widthAnchor.constraint(equalTo: rootStack.widthAnchor),
-            browserStrip.heightAnchor.constraint(equalToConstant: Layout.tileHeight),
-            footerStack.widthAnchor.constraint(equalTo: rootStack.widthAnchor)
+            browserStrip.heightAnchor.constraint(equalToConstant: Layout.tileHeight)
         ])
     }
 
-    private func makeBrowserStrip() -> NSScrollView {
-        let scrollView = NSScrollView()
-        scrollView.borderType = .noBorder
-        scrollView.drawsBackground = false
-        scrollView.hasVerticalScroller = false
-        scrollView.autohidesScrollers = true
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-
-        let viewportWidth = Self.windowWidth(forBrowserCount: browsers.count) - Layout.horizontalPadding * 2
-        let browserContentWidth = browserStripContentWidth()
-        let contentWidth = max(browserContentWidth, viewportWidth)
-        scrollView.hasHorizontalScroller = browserContentWidth > viewportWidth
-
-        let documentView = NSView(
-            frame: NSRect(
-                x: 0,
-                y: 0,
-                width: contentWidth,
-                height: Layout.tileHeight
-            )
-        )
-        documentView.menu = resetMenu()
+    private func makeBrowserStrip() -> NSView {
+        let containerView = NSView()
+        containerView.translatesAutoresizingMaskIntoConstraints = false
+        containerView.menu = contextMenu
 
         let stackView = NSStackView()
         stackView.orientation = .horizontal
         stackView.alignment = .top
         stackView.spacing = Layout.tileSpacing
         stackView.translatesAutoresizingMaskIntoConstraints = false
-        stackView.menu = resetMenu()
-        documentView.addSubview(stackView)
+        stackView.menu = contextMenu
+        containerView.addSubview(stackView)
 
         let rememberedBrowserIdentifier = preferences.rememberLastBrowser
             ? preferences.lastBrowserBundleIdentifier
@@ -175,40 +168,24 @@ final class BrowserChoiceWindowController: NSWindowController {
             button.target = self
             button.action = #selector(browserTileDidClick(_:))
             button.isDefaultChoice = browser.bundleIdentifier == rememberedBrowserIdentifier
-            button.menu = resetMenu()
+            button.menu = contextMenu
 
             stackView.addArrangedSubview(button)
             browserTileButtons.append(button)
             NSLayoutConstraint.activate([
-                button.widthAnchor.constraint(equalToConstant: Layout.tileWidth),
+                button.widthAnchor.constraint(equalToConstant: tileWidth),
                 button.heightAnchor.constraint(equalToConstant: Layout.tileHeight)
             ])
         }
 
         NSLayoutConstraint.activate([
-            stackView.centerXAnchor.constraint(equalTo: documentView.centerXAnchor),
-            stackView.leadingAnchor.constraint(greaterThanOrEqualTo: documentView.leadingAnchor),
-            stackView.trailingAnchor.constraint(lessThanOrEqualTo: documentView.trailingAnchor),
-            stackView.topAnchor.constraint(equalTo: documentView.topAnchor),
+            stackView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+            stackView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+            stackView.topAnchor.constraint(equalTo: containerView.topAnchor),
             stackView.heightAnchor.constraint(equalToConstant: Layout.tileHeight)
         ])
 
-        scrollView.documentView = documentView
-        return scrollView
-    }
-
-    private func browserStripContentWidth() -> CGFloat {
-        let browserCount = CGFloat(max(browsers.count, 1))
-        return browserCount * Layout.tileWidth + max(0, browserCount - 1) * Layout.tileSpacing
-    }
-
-    @objc private func rememberSelectionDidChange() {
-        preferences.rememberLastBrowser = rememberSelectionCheckbox.state == .on
-
-        if rememberSelectionCheckbox.state == .off {
-            preferences.lastBrowserBundleIdentifier = nil
-            markRememberedBrowser(nil)
-        }
+        return containerView
     }
 
     @objc private func browserTileDidClick(_ sender: BrowserTileButton) {
@@ -216,22 +193,19 @@ final class BrowserChoiceWindowController: NSWindowController {
             return
         }
 
+        selectedIndex = sender.tag
+        updateTileSelection()
         complete(
-            .open(
-                browser: browsers[sender.tag],
-                rememberSelection: rememberSelectionCheckbox.state == .on
-            )
+            .open(browser: browsers[sender.tag])
         )
     }
 
     @objc private func resetRememberedChoice() {
-        preferences.rememberLastBrowser = false
-        preferences.lastBrowserBundleIdentifier = nil
-        rememberSelectionCheckbox.state = .off
+        preferences.resetRememberedBrowserChoice()
         markRememberedBrowser(nil)
     }
 
-    private func resetMenu() -> NSMenu {
+    private func makeResetMenu() -> NSMenu {
         let menu = NSMenu()
         let resetItem = NSMenuItem(
             title: "Reset remembered choice",
@@ -241,6 +215,47 @@ final class BrowserChoiceWindowController: NSWindowController {
         resetItem.target = self
         menu.addItem(resetItem)
         return menu
+    }
+
+    private func handleKeyDown(_ event: NSEvent) -> Bool {
+        switch event.keyCode {
+        case 123:
+            moveSelection(by: -1)
+            return true
+        case 124:
+            moveSelection(by: 1)
+            return true
+        case 36, 49, 76:
+            openSelectedBrowser()
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func moveSelection(by delta: Int) {
+        guard !browsers.isEmpty else {
+            return
+        }
+
+        selectedIndex = (selectedIndex + delta + browsers.count) % browsers.count
+        updateTileSelection()
+    }
+
+    private func openSelectedBrowser() {
+        guard browsers.indices.contains(selectedIndex) else {
+            return
+        }
+
+        complete(
+            .open(browser: browsers[selectedIndex])
+        )
+    }
+
+    private func updateTileSelection() {
+        for (index, button) in browserTileButtons.enumerated() {
+            button.isKeyboardSelected = index == selectedIndex
+        }
     }
 
     private func markRememberedBrowser(_ bundleIdentifier: String?) {
@@ -270,13 +285,28 @@ final class BrowserChoiceWindowController: NSWindowController {
         return [rememberedBrowser] + browsers.filter { $0.bundleIdentifier != lastBrowserBundleIdentifier }
     }
 
-    private static func windowWidth(forBrowserCount browserCount: Int) -> CGFloat {
-        let contentWidth = CGFloat(max(browserCount, 1)) * Layout.tileWidth
-            + CGFloat(max(browserCount - 1, 0)) * Layout.tileSpacing
-            + Layout.horizontalPadding * 2
+    private static func initialSelectedIndex(in browsers: [Browser], preferences: Preferences) -> Int {
+        guard preferences.rememberLastBrowser,
+              let lastBrowserBundleIdentifier = preferences.lastBrowserBundleIdentifier,
+              let index = browsers.firstIndex(where: { $0.bundleIdentifier == lastBrowserBundleIdentifier })
+        else {
+            return 0
+        }
 
-        let screenLimit = NSScreen.main.map { $0.visibleFrame.width * 0.82 } ?? Layout.maxWindowWidth
-        return min(max(contentWidth, Layout.minWindowWidth), min(Layout.maxWindowWidth, screenLimit))
+        return index
+    }
+
+    private static func windowMetrics(forBrowserCount browserCount: Int) -> (windowWidth: CGFloat, tileWidth: CGFloat) {
+        let count = CGFloat(max(browserCount, 1))
+        let screenLimit = NSScreen.main.map { $0.visibleFrame.width * Layout.maxScreenWidthFraction } ?? 900
+        let availableTileWidth = floor(
+            (screenLimit - Layout.outerPadding * 2 - max(0, count - 1) * Layout.tileSpacing) / count
+        )
+        let tileWidth = min(Layout.preferredTileWidth, max(Layout.minimumTileWidth, availableTileWidth))
+        let contentWidth = count * tileWidth + max(0, count - 1) * Layout.tileSpacing
+        let windowWidth = contentWidth + Layout.outerPadding * 2
+
+        return (windowWidth, tileWidth)
     }
 }
 
@@ -291,8 +321,19 @@ extension BrowserChoiceWindowController: NSWindowDelegate {
     }
 }
 
+extension BrowserChoiceWindowController: NSMenuItemValidation {
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        guard menuItem.action == #selector(resetRememberedChoice) else {
+            return true
+        }
+
+        return preferences.rememberLastBrowser || preferences.lastBrowserBundleIdentifier != nil
+    }
+}
+
 private final class BrowserChoiceWindow: NSWindow {
     var onCancel: (() -> Void)?
+    var onKeyDown: ((NSEvent) -> Bool)?
 
     override func cancelOperation(_ sender: Any?) {
         onCancel?()
@@ -301,6 +342,10 @@ private final class BrowserChoiceWindow: NSWindow {
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 {
             onCancel?()
+            return
+        }
+
+        if onKeyDown?(event) == true {
             return
         }
 

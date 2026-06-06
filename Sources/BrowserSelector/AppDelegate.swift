@@ -74,6 +74,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        guard !preferences.didShowDefaultBrowserPrompt else {
+            menuBarController.refreshMenu()
+            return
+        }
+
+        preferences.didShowDefaultBrowserPrompt = true
+
         let alert = NSAlert()
         alert.alertStyle = .informational
         alert.messageText = "Назначить Browser Selector браузером по умолчанию?"
@@ -173,6 +180,10 @@ extension AppDelegate: MenuBarControllerDelegate {
 
     func menuBarControllerDidRequestBrowserRefresh(_ controller: MenuBarController) {
         menuBarController.refreshMenu()
+    }
+
+    func menuBarControllerDidRequestRememberedChoiceReset(_ controller: MenuBarController) {
+        preferences.resetRememberedBrowserChoice()
     }
 
     func menuBarControllerDidRequestTestOpen(_ controller: MenuBarController) {

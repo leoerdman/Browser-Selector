@@ -2,22 +2,41 @@ import AppKit
 import Foundation
 
 final class BrowserLauncher {
+    private enum LaunchFallbackPolicy {
+        case allowLaunchServices
+        case requireUserAction(Error)
+    }
+
     private let appleScriptQueue = DispatchQueue(label: "com.leoerdman.BrowserSelector.appleScript")
     private var activeProcesses: [UUID: Process] = [:]
 
     func open(_ url: URL, in browser: Browser, completion: @escaping (Result<Void, Error>) -> Void) {
         openInExistingBrowserWindow(url, browser: browser) { [weak self] primaryResult in
-            guard case .failure = primaryResult else {
+            switch primaryResult {
+            case .success:
                 completion(.success(()))
                 return
+            case let .failure(error):
+                switch Self.fallbackPolicy(for: error) {
+                case .allowLaunchServices:
+                    break
+                case let .requireUserAction(error):
+                    completion(.failure(error))
+                    return
+                }
             }
 
             self?.openLocation(url, browser: browser) { [weak self] openLocationResult in
                 switch openLocationResult {
                 case .success:
                     completion(.success(()))
-                case .failure:
-                    self?.openThroughLaunchServices(url, browser: browser, completion: completion)
+                case let .failure(error):
+                    switch Self.fallbackPolicy(for: error) {
+                    case .allowLaunchServices:
+                        self?.openThroughLaunchServices(url, browser: browser, completion: completion)
+                    case let .requireUserAction(error):
+                        completion(.failure(error))
+                    }
                 }
             }
         }
@@ -150,12 +169,22 @@ final class BrowserLauncher {
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
+    private static func fallbackPolicy(for error: Error) -> LaunchFallbackPolicy {
+        guard let launchError = error as? BrowserLaunchError,
+              launchError.isAutomationPermissionDenied
+        else {
+            return .allowLaunchServices
+        }
+
+        return .requireUserAction(error)
+    }
+
     private func chromiumNewTabScript(bundleIdentifier: String, urlString: String) -> String {
         let browserID = Self.appleScriptLiteral(bundleIdentifier)
         let targetURL = Self.appleScriptLiteral(urlString)
 
         return """
-        using terms from application "Google Chrome"
+        using terms from application id \(browserID)
         tell application id \(browserID)
             activate
             if (count of windows) = 0 then make new window
@@ -199,14 +228,17 @@ private extension Browser {
 
 private struct BrowserLaunchError: LocalizedError {
     let message: String
+    let errorNumber: Int?
 
     init(message: String) {
         self.message = message
+        self.errorNumber = nil
     }
 
     init(errorInfo: NSDictionary) {
         let message = errorInfo[NSAppleScript.errorMessage] as? String
         let number = errorInfo[NSAppleScript.errorNumber] as? NSNumber
+        self.errorNumber = number?.intValue
 
         if let message, let number {
             self.message = "\(message) (\(number.intValue))"
@@ -221,5 +253,9 @@ private struct BrowserLaunchError: LocalizedError {
 
     var errorDescription: String? {
         message
+    }
+
+    var isAutomationPermissionDenied: Bool {
+        errorNumber == -1743
     }
 }
