@@ -32,6 +32,62 @@ final class BrowserChoiceWindowControllerTests: XCTestCase {
         }
     }
 
+    func testInsidePanelMouseDownDoesNotCancelTheChooser() {
+        runOnMainThread {
+            let browser = Self.makeBrowser(bundleIdentifier: "com.apple.Safari", displayName: "Safari")
+            let preferences = Preferences(userDefaults: UserDefaults(suiteName: UUID().uuidString)!)
+            var results: [BrowserChoiceResult] = []
+
+            let controller = BrowserChoiceWindowController(
+                browsers: [browser],
+                preferences: preferences
+            ) { result in
+                results.append(result)
+            }
+
+            guard let window = controller.window else {
+                XCTFail("Expected BrowserChoiceWindowController to create a window.")
+                return
+            }
+
+            controller.cancelIfMouseDownIsOutsidePanel(
+                at: NSPoint(x: window.frame.midX, y: window.frame.midY)
+            )
+
+            XCTAssertTrue(results.isEmpty)
+        }
+    }
+
+    func testOutsidePanelMouseDownCancelsTheChooserWithoutOpeningABrowser() {
+        runOnMainThread {
+            let browser = Self.makeBrowser(bundleIdentifier: "com.apple.Safari", displayName: "Safari")
+            let preferences = Preferences(userDefaults: UserDefaults(suiteName: UUID().uuidString)!)
+            var results: [BrowserChoiceResult] = []
+
+            let controller = BrowserChoiceWindowController(
+                browsers: [browser],
+                preferences: preferences
+            ) { result in
+                results.append(result)
+            }
+
+            guard let window = controller.window else {
+                XCTFail("Expected BrowserChoiceWindowController to create a window.")
+                return
+            }
+
+            let outsidePoint = NSPoint(x: window.frame.maxX + 1, y: window.frame.midY)
+            controller.cancelIfMouseDownIsOutsidePanel(at: outsidePoint)
+            controller.cancelIfMouseDownIsOutsidePanel(at: outsidePoint)
+
+            XCTAssertEqual(results.count, 1)
+            guard case .cancel = results[0] else {
+                XCTFail("Expected outside panel mouse down to cancel the chooser.")
+                return
+            }
+        }
+    }
+
     func testArrowAndReturnOpenTheCurrentlySelectedBrowser() {
         runOnMainThread {
             let safari = Self.makeBrowser(bundleIdentifier: "com.apple.Safari", displayName: "Safari")

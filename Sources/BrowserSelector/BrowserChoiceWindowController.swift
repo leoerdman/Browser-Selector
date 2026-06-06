@@ -29,6 +29,7 @@ final class BrowserChoiceWindowController: NSWindowController {
     private lazy var contextMenu = makeResetMenu()
     private var selectedIndex: Int
     private var didComplete = false
+    private var outsideClickMonitor: OutsidePanelClickMonitor?
 
     init(
         browsers: [Browser],
@@ -86,6 +87,10 @@ final class BrowserChoiceWindowController: NSWindowController {
         fatalError("init(coder:) is not supported")
     }
 
+    deinit {
+        stopOutsideClickMonitor()
+    }
+
     func present() {
         guard let window else {
             return
@@ -94,6 +99,17 @@ final class BrowserChoiceWindowController: NSWindowController {
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        startOutsideClickMonitor()
+    }
+
+    func cancelIfMouseDownIsOutsidePanel(at screenLocation: NSPoint) {
+        guard let window,
+              !window.frame.contains(screenLocation)
+        else {
+            return
+        }
+
+        complete(.cancel)
     }
 
     private func buildInterface() {
@@ -270,8 +286,23 @@ final class BrowserChoiceWindowController: NSWindowController {
         }
 
         didComplete = true
+        stopOutsideClickMonitor()
         completion(result)
         close()
+    }
+
+    private func startOutsideClickMonitor() {
+        stopOutsideClickMonitor()
+        let monitor = OutsidePanelClickMonitor { [weak self] screenLocation in
+            self?.cancelIfMouseDownIsOutsidePanel(at: screenLocation)
+        }
+        monitor.start()
+        outsideClickMonitor = monitor
+    }
+
+    private func stopOutsideClickMonitor() {
+        outsideClickMonitor?.stop()
+        outsideClickMonitor = nil
     }
 
     private static func orderedBrowsers(_ browsers: [Browser], preferences: Preferences) -> [Browser] {
@@ -316,6 +347,7 @@ extension BrowserChoiceWindowController: NSWindowDelegate {
             return
         }
 
+        stopOutsideClickMonitor()
         didComplete = true
         completion(.cancel)
     }
@@ -382,6 +414,70 @@ private final class BrowserChoiceWindow: NSWindow {
 private extension NSEvent {
     var isEscapeKey: Bool {
         keyCode == 53 || charactersIgnoringModifiers == "\u{1B}"
+    }
+}
+
+private final class OutsidePanelClickMonitor {
+    private static let mouseDownEvents: NSEvent.EventTypeMask = [
+        .leftMouseDown,
+        .rightMouseDown,
+        .otherMouseDown
+    ]
+
+    private let onMouseDown: (NSPoint) -> Void
+    private var localMonitor: Any?
+    private var globalMonitor: Any?
+
+    init(onMouseDown: @escaping (NSPoint) -> Void) {
+        self.onMouseDown = onMouseDown
+    }
+
+    deinit {
+        stop()
+    }
+
+    func start() {
+        guard localMonitor == nil,
+              globalMonitor == nil
+        else {
+            return
+        }
+
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: Self.mouseDownEvents) { [weak self] event in
+            self?.handle(event)
+            return event
+        }
+
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: Self.mouseDownEvents) { [weak self] event in
+            let screenLocation = Self.screenLocation(for: event)
+            DispatchQueue.main.async {
+                self?.onMouseDown(screenLocation)
+            }
+        }
+    }
+
+    func stop() {
+        if let localMonitor {
+            NSEvent.removeMonitor(localMonitor)
+            self.localMonitor = nil
+        }
+
+        if let globalMonitor {
+            NSEvent.removeMonitor(globalMonitor)
+            self.globalMonitor = nil
+        }
+    }
+
+    private func handle(_ event: NSEvent) {
+        onMouseDown(Self.screenLocation(for: event))
+    }
+
+    private static func screenLocation(for event: NSEvent) -> NSPoint {
+        if let window = event.window {
+            return window.convertPoint(toScreen: event.locationInWindow)
+        }
+
+        return NSEvent.mouseLocation
     }
 }
 
