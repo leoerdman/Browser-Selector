@@ -71,7 +71,7 @@ final class DefaultBrowserRegistrationService {
             }
         }
 
-        return .requestedSystemConfirmation
+        return isDefaultBrowser ? .alreadyDefault : .requestedSystemConfirmation
     }
 
     func defaultHandler(forURLScheme scheme: String) -> String? {

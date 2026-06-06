@@ -2,15 +2,23 @@ import AppKit
 import Foundation
 
 final class BrowserLauncher {
+    private let appleScriptQueue = DispatchQueue(label: "com.leoerdman.BrowserSelector.appleScript")
     private var activeProcesses: [UUID: Process] = [:]
 
     func open(_ url: URL, in browser: Browser, completion: @escaping (Result<Void, Error>) -> Void) {
-        openInExistingBrowserWindow(url, browser: browser) { [weak self] appleScriptResult in
-            switch appleScriptResult {
-            case .success:
+        openInExistingBrowserWindow(url, browser: browser) { [weak self] primaryResult in
+            guard case .failure = primaryResult else {
                 completion(.success(()))
-            case .failure:
-                self?.openThroughLaunchServices(url, browser: browser, completion: completion)
+                return
+            }
+
+            self?.openLocation(url, browser: browser) { [weak self] openLocationResult in
+                switch openLocationResult {
+                case .success:
+                    completion(.success(()))
+                case .failure:
+                    self?.openThroughLaunchServices(url, browser: browser, completion: completion)
+                }
             }
         }
     }
@@ -20,13 +28,30 @@ final class BrowserLauncher {
         browser: Browser,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
-        let script = browser.usesChromiumTabModel
-            ? chromiumNewTabScript()
-            : openLocationScript()
+        guard browser.usesChromiumTabModel else {
+            openLocation(url, browser: browser, completion: completion)
+            return
+        }
 
-        runProcess(
-            executableURL: URL(fileURLWithPath: "/usr/bin/osascript"),
-            arguments: script.flatMap { ["-e", $0] } + [browser.bundleIdentifier, url.absoluteString],
+        runAppleScript(
+            chromiumNewTabScript(
+                bundleIdentifier: browser.bundleIdentifier,
+                urlString: url.absoluteString
+            ),
+            completion: completion
+        )
+    }
+
+    private func openLocation(
+        _ url: URL,
+        browser: Browser,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        runAppleScript(
+            openLocationScript(
+                bundleIdentifier: browser.bundleIdentifier,
+                urlString: url.absoluteString
+            ),
             completion: completion
         )
     }
@@ -41,6 +66,31 @@ final class BrowserLauncher {
             arguments: ["-b", browser.bundleIdentifier, url.absoluteString],
             completion: completion
         )
+    }
+
+    private func runAppleScript(
+        _ source: String,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        appleScriptQueue.async {
+            guard let appleScript = NSAppleScript(source: source) else {
+                DispatchQueue.main.async {
+                    completion(.failure(BrowserLaunchError(message: "Не удалось подготовить AppleScript.")))
+                }
+                return
+            }
+
+            var errorInfo: NSDictionary?
+            appleScript.executeAndReturnError(&errorInfo)
+
+            DispatchQueue.main.async {
+                if let errorInfo {
+                    completion(.failure(BrowserLaunchError(errorInfo: errorInfo)))
+                } else {
+                    completion(.success(()))
+                }
+            }
+        }
     }
 
     private func runProcess(
@@ -100,36 +150,44 @@ final class BrowserLauncher {
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
-    private func chromiumNewTabScript() -> [String] {
-        [
-            "on run argv",
-            "set browserID to item 1 of argv",
-            "set targetURL to item 2 of argv",
-            "using terms from application \"Google Chrome\"",
-            "tell application id browserID",
-            "activate",
-            "if (count of windows) = 0 then make new window",
-            "tell front window",
-            "set newTab to make new tab at end of tabs with properties {URL:targetURL}",
-            "set active tab index to (count of tabs)",
-            "end tell",
-            "end tell",
-            "end using terms from",
-            "end run"
-        ]
+    private func chromiumNewTabScript(bundleIdentifier: String, urlString: String) -> String {
+        let browserID = Self.appleScriptLiteral(bundleIdentifier)
+        let targetURL = Self.appleScriptLiteral(urlString)
+
+        return """
+        using terms from application "Google Chrome"
+        tell application id \(browserID)
+            activate
+            if (count of windows) = 0 then make new window
+            tell front window
+                set newTab to make new tab at end of tabs with properties {URL:\(targetURL)}
+                set active tab index to (count of tabs)
+            end tell
+        end tell
+        end using terms from
+        """
     }
 
-    private func openLocationScript() -> [String] {
-        [
-            "on run argv",
-            "set browserID to item 1 of argv",
-            "set targetURL to item 2 of argv",
-            "tell application id browserID",
-            "activate",
-            "open location targetURL",
-            "end tell",
-            "end run"
-        ]
+    private func openLocationScript(bundleIdentifier: String, urlString: String) -> String {
+        let browserID = Self.appleScriptLiteral(bundleIdentifier)
+        let targetURL = Self.appleScriptLiteral(urlString)
+
+        return """
+        tell application id \(browserID)
+            activate
+            open location \(targetURL)
+        end tell
+        """
+    }
+
+    private static func appleScriptLiteral(_ value: String) -> String {
+        let escapedValue = value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\r", with: "\\r")
+            .replacingOccurrences(of: "\n", with: "\\n")
+
+        return "\"\(escapedValue)\""
     }
 }
 
@@ -141,6 +199,25 @@ private extension Browser {
 
 private struct BrowserLaunchError: LocalizedError {
     let message: String
+
+    init(message: String) {
+        self.message = message
+    }
+
+    init(errorInfo: NSDictionary) {
+        let message = errorInfo[NSAppleScript.errorMessage] as? String
+        let number = errorInfo[NSAppleScript.errorNumber] as? NSNumber
+
+        if let message, let number {
+            self.message = "\(message) (\(number.intValue))"
+        } else if let message {
+            self.message = message
+        } else if let number {
+            self.message = "AppleScript завершился с ошибкой \(number.intValue)."
+        } else {
+            self.message = "AppleScript завершился с неизвестной ошибкой."
+        }
+    }
 
     var errorDescription: String? {
         message

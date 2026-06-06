@@ -42,5 +42,7 @@
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Browser Selector needs to control the selected browser to open links as new tabs in the existing browser window.</string>
 </dict>
 </plist>
