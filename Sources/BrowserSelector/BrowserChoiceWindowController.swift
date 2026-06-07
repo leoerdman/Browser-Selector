@@ -97,6 +97,8 @@ final class BrowserChoiceWindowController: NSWindowController {
         }
 
         window.center()
+        window.contentView?.layoutSubtreeIfNeeded()
+        window.displayIfNeeded()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         startOutsideClickMonitor()

@@ -3,9 +3,14 @@ import Foundation
 
 final class BrowserRepository {
     private let workspace: NSWorkspace
+    private let iconProvider: BrowserIconProviding
 
-    init(workspace: NSWorkspace = .shared) {
+    init(
+        workspace: NSWorkspace = .shared,
+        iconProvider: BrowserIconProviding = BrowserIconProvider.shared
+    ) {
         self.workspace = workspace
+        self.iconProvider = iconProvider
     }
 
     func installedBrowsers() -> [Browser] {
@@ -46,8 +51,7 @@ final class BrowserRepository {
             return nil
         }
 
-        let icon = workspace.icon(forFile: bundleURL.path)
-        icon.size = NSSize(width: 36, height: 36)
+        let icon = iconProvider.icon(forApplicationAt: bundleURL)
 
         return Browser(
             bundleIdentifier: bundleIdentifier,
