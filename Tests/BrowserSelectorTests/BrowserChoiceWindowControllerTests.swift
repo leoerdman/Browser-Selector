@@ -32,6 +32,27 @@ final class BrowserChoiceWindowControllerTests: XCTestCase {
         }
     }
 
+    func testChooserWindowUsesBorderlessMinimalPanelChrome() {
+        runOnMainThread {
+            let browser = Self.makeBrowser(bundleIdentifier: "com.apple.Safari", displayName: "Safari")
+            let preferences = Preferences(userDefaults: UserDefaults(suiteName: UUID().uuidString)!)
+
+            let controller = BrowserChoiceWindowController(
+                browsers: [browser],
+                preferences: preferences
+            ) { _ in }
+
+            guard let window = controller.window else {
+                XCTFail("Expected BrowserChoiceWindowController to create a window.")
+                return
+            }
+
+            XCTAssertTrue(window.styleMask.contains(.borderless))
+            XCTAssertFalse(window.styleMask.contains(.titled))
+            XCTAssertFalse(window.styleMask.contains(.closable))
+        }
+    }
+
     func testInsidePanelMouseDownDoesNotCancelTheChooser() {
         runOnMainThread {
             let browser = Self.makeBrowser(bundleIdentifier: "com.apple.Safari", displayName: "Safari")
@@ -110,6 +131,35 @@ final class BrowserChoiceWindowControllerTests: XCTestCase {
             }
 
             window.sendEvent(Self.rightArrowKeyEvent(windowNumber: window.windowNumber))
+            window.sendEvent(Self.returnKeyEvent(windowNumber: window.windowNumber))
+
+            XCTAssertEqual(openedBrowserIdentifier, "com.google.Chrome")
+        }
+    }
+
+    func testReturnOpensFirstBrowserFromProvidedOrderWithoutWindowLevelReordering() {
+        runOnMainThread {
+            let chrome = Self.makeBrowser(bundleIdentifier: "com.google.Chrome", displayName: "Google Chrome")
+            let safari = Self.makeBrowser(bundleIdentifier: "com.apple.Safari", displayName: "Safari")
+            let preferences = Preferences(userDefaults: UserDefaults(suiteName: UUID().uuidString)!)
+            preferences.rememberLastBrowser = true
+            preferences.lastBrowserBundleIdentifier = "com.apple.Safari"
+            var openedBrowserIdentifier: String?
+
+            let controller = BrowserChoiceWindowController(
+                browsers: [chrome, safari],
+                preferences: preferences
+            ) { result in
+                if case let .open(browser) = result {
+                    openedBrowserIdentifier = browser.bundleIdentifier
+                }
+            }
+
+            guard let window = controller.window else {
+                XCTFail("Expected BrowserChoiceWindowController to create a window.")
+                return
+            }
+
             window.sendEvent(Self.returnKeyEvent(windowNumber: window.windowNumber))
 
             XCTAssertEqual(openedBrowserIdentifier, "com.google.Chrome")

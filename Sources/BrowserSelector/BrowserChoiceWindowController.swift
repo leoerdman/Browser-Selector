@@ -36,13 +36,12 @@ final class BrowserChoiceWindowController: NSWindowController {
         preferences: Preferences,
         completion: @escaping (BrowserChoiceResult) -> Void
     ) {
-        let orderedBrowsers = Self.orderedBrowsers(browsers, preferences: preferences)
-        let windowMetrics = Self.windowMetrics(forBrowserCount: orderedBrowsers.count)
-        self.browsers = orderedBrowsers
+        let windowMetrics = Self.windowMetrics(forBrowserCount: browsers.count)
+        self.browsers = browsers
         self.preferences = preferences
         self.completion = completion
         self.tileWidth = windowMetrics.tileWidth
-        self.selectedIndex = Self.initialSelectedIndex(in: orderedBrowsers, preferences: preferences)
+        self.selectedIndex = 0
 
         let window = BrowserChoiceWindow(
             contentRect: NSRect(
@@ -51,13 +50,11 @@ final class BrowserChoiceWindowController: NSWindowController {
                 width: windowMetrics.windowWidth,
                 height: Layout.windowHeight
             ),
-            styleMask: [.titled, .closable, .fullSizeContentView],
+            styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
         window.title = "Browser Selector"
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = true
@@ -65,9 +62,6 @@ final class BrowserChoiceWindowController: NSWindowController {
         window.isReleasedWhenClosed = false
         window.level = .floating
         window.collectionBehavior = [.moveToActiveSpace, .transient]
-        window.standardWindowButton(.closeButton)?.isHidden = true
-        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        window.standardWindowButton(.zoomButton)?.isHidden = true
 
         super.init(window: window)
 
@@ -305,28 +299,6 @@ final class BrowserChoiceWindowController: NSWindowController {
     private func stopOutsideClickMonitor() {
         outsideClickMonitor?.stop()
         outsideClickMonitor = nil
-    }
-
-    private static func orderedBrowsers(_ browsers: [Browser], preferences: Preferences) -> [Browser] {
-        guard preferences.rememberLastBrowser,
-              let lastBrowserBundleIdentifier = preferences.lastBrowserBundleIdentifier,
-              let rememberedBrowser = browsers.first(where: { $0.bundleIdentifier == lastBrowserBundleIdentifier })
-        else {
-            return browsers
-        }
-
-        return [rememberedBrowser] + browsers.filter { $0.bundleIdentifier != lastBrowserBundleIdentifier }
-    }
-
-    private static func initialSelectedIndex(in browsers: [Browser], preferences: Preferences) -> Int {
-        guard preferences.rememberLastBrowser,
-              let lastBrowserBundleIdentifier = preferences.lastBrowserBundleIdentifier,
-              let index = browsers.firstIndex(where: { $0.bundleIdentifier == lastBrowserBundleIdentifier })
-        else {
-            return 0
-        }
-
-        return index
     }
 
     private static func windowMetrics(forBrowserCount browserCount: Int) -> (windowWidth: CGFloat, tileWidth: CGFloat) {

@@ -63,8 +63,8 @@ final class MenuBarController: NSObject {
         menu.addItem(titleItem)
 
         let statusTitle = isDefaultBrowser
-            ? "Active"
-            : "Not Default Browser"
+            ? "Активен"
+            : "Не назначен браузером по умолчанию"
         let statusMenuItem = NSMenuItem(title: statusTitle, action: nil, keyEquivalent: "")
         statusMenuItem.isEnabled = false
         menu.addItem(statusMenuItem)
@@ -72,7 +72,7 @@ final class MenuBarController: NSObject {
         menu.addItem(.separator())
 
         let registerItem = NSMenuItem(
-            title: "Set as Default Browser",
+            title: "Назначить браузером по умолчанию",
             action: #selector(registerAsDefaultBrowser),
             keyEquivalent: ""
         )
@@ -83,7 +83,7 @@ final class MenuBarController: NSObject {
         menu.addItem(.separator())
 
         let rememberItem = NSMenuItem(
-            title: "Remember Browser Choice",
+            title: "Запоминать выбранный браузер",
             action: #selector(toggleRememberBrowserChoice),
             keyEquivalent: ""
         )
@@ -100,7 +100,7 @@ final class MenuBarController: NSObject {
         menu.addItem(rememberedItem)
 
         let resetItem = NSMenuItem(
-            title: "Reset Remembered Choice",
+            title: "Сбросить запомненный браузер",
             action: #selector(resetRememberedChoice),
             keyEquivalent: ""
         )
@@ -111,7 +111,7 @@ final class MenuBarController: NSObject {
         menu.addItem(.separator())
 
         let testItem = NSMenuItem(
-            title: "Test Chooser",
+            title: "Проверить окно выбора",
             action: #selector(testOpen),
             keyEquivalent: ""
         )
@@ -119,7 +119,7 @@ final class MenuBarController: NSObject {
         menu.addItem(testItem)
 
         let refreshItem = NSMenuItem(
-            title: "Refresh Browsers",
+            title: "Обновить список браузеров",
             action: #selector(refreshBrowsers),
             keyEquivalent: ""
         )
@@ -129,7 +129,7 @@ final class MenuBarController: NSObject {
         menu.addItem(.separator())
 
         let browserCountItem = NSMenuItem(
-            title: "\(browsers.count) Browsers Found",
+            title: Self.browserCountTitle(browsers.count),
             action: nil,
             keyEquivalent: ""
         )
@@ -138,11 +138,11 @@ final class MenuBarController: NSObject {
 
         menu.addItem(.separator())
 
-        let aboutItem = NSMenuItem(title: "About Browser Selector", action: #selector(showAbout), keyEquivalent: "")
+        let aboutItem = NSMenuItem(title: "О Browser Selector", action: #selector(showAbout), keyEquivalent: "")
         aboutItem.target = self
         menu.addItem(aboutItem)
 
-        let quitItem = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Выйти", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quitItem.target = NSApp
         menu.addItem(quitItem)
 
@@ -181,17 +181,35 @@ final class MenuBarController: NSObject {
 
     private func rememberedBrowserTitle(in browsers: [Browser]) -> String {
         guard preferences.rememberLastBrowser else {
-            return "Default Choice: Off"
+            return "Браузер по умолчанию: не запоминать"
         }
 
         guard let bundleIdentifier = preferences.lastBrowserBundleIdentifier else {
-            return "Default Choice: Not Set"
+            return "Браузер по умолчанию: будет выбран после клика"
         }
 
         let browserName = browsers
             .first { $0.bundleIdentifier == bundleIdentifier }?
             .shortDisplayName
 
-        return "Default Choice: \(browserName ?? bundleIdentifier)"
+        return "Браузер по умолчанию: \(browserName ?? bundleIdentifier)"
+    }
+
+    private static func browserCountTitle(_ count: Int) -> String {
+        let suffix: String
+        let lastTwoDigits = count % 100
+        let lastDigit = count % 10
+
+        if (11...14).contains(lastTwoDigits) {
+            suffix = "браузеров найдено"
+        } else if lastDigit == 1 {
+            suffix = "браузер найден"
+        } else if (2...4).contains(lastDigit) {
+            suffix = "браузера найдено"
+        } else {
+            suffix = "браузеров найдено"
+        }
+
+        return "\(count) \(suffix)"
     }
 }

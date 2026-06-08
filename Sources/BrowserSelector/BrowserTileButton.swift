@@ -94,6 +94,11 @@ final class BrowserTileButton: NSControl {
         sendAction(action, to: target)
     }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearance()
+    }
+
     private func setup() {
         wantsLayer = true
         layer?.cornerRadius = 10
@@ -137,17 +142,17 @@ final class BrowserTileButton: NSControl {
         let borderWidth: CGFloat
 
         if isPressed {
-            backgroundColor = .grayscaleTileFill(alpha: 0.26)
+            backgroundColor = grayscaleTileFill(alpha: 0.26)
         } else if isHovering || isKeyboardSelected {
-            backgroundColor = .grayscaleTileFill(alpha: 0.18)
+            backgroundColor = grayscaleTileFill(alpha: 0.18)
         } else if isDefaultChoice {
-            backgroundColor = .grayscaleTileFill(alpha: 0.12)
+            backgroundColor = grayscaleTileFill(alpha: 0.12)
         } else {
             backgroundColor = .clear
         }
 
         if isDefaultChoice {
-            borderColor = .grayscaleTileBorder(alpha: 0.38)
+            borderColor = grayscaleTileBorder(alpha: 0.38)
             borderWidth = 1
         } else {
             borderColor = .clear
@@ -158,14 +163,18 @@ final class BrowserTileButton: NSControl {
         layer?.borderColor = borderColor.cgColor
         layer?.borderWidth = borderWidth
     }
-}
 
-private extension NSColor {
-    static func grayscaleTileFill(alpha: CGFloat) -> NSColor {
-        NSColor(calibratedWhite: 1.0, alpha: alpha)
+    private func grayscaleTileFill(alpha: CGFloat) -> NSColor {
+        let white: CGFloat = isDarkAppearance ? 1.0 : 0.0
+        return NSColor(calibratedWhite: white, alpha: alpha)
     }
 
-    static func grayscaleTileBorder(alpha: CGFloat) -> NSColor {
-        NSColor(calibratedWhite: 1.0, alpha: alpha)
+    private func grayscaleTileBorder(alpha: CGFloat) -> NSColor {
+        let white: CGFloat = isDarkAppearance ? 1.0 : 0.0
+        return NSColor(calibratedWhite: white, alpha: alpha)
+    }
+
+    private var isDarkAppearance: Bool {
+        effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
     }
 }

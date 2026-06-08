@@ -40,6 +40,41 @@ final class BrowserUsageStoreTests: XCTestCase {
         )
     }
 
+    func testRememberedBrowserOnlyBreaksUsageTies() throws {
+        let fileURL = makeTemporaryFileURL()
+        let store = BrowserUsageStore(fileURL: fileURL)
+        try store.recordUse(bundleIdentifier: "com.google.Chrome")
+        try store.recordUse(bundleIdentifier: "com.google.Chrome")
+        try store.recordUse(bundleIdentifier: "org.mozilla.firefox")
+
+        let safari = makeBrowser(bundleIdentifier: "com.apple.Safari", displayName: "Safari")
+        let firefox = makeBrowser(bundleIdentifier: "org.mozilla.firefox", displayName: "Firefox")
+        let chrome = makeBrowser(bundleIdentifier: "com.google.Chrome", displayName: "Chrome")
+
+        XCTAssertEqual(
+            store.rankedBrowsers(
+                [safari, firefox, chrome],
+                preferredBundleIdentifier: "org.mozilla.firefox"
+            ).map(\.bundleIdentifier),
+            [
+                "com.google.Chrome",
+                "org.mozilla.firefox",
+                "com.apple.Safari"
+            ]
+        )
+
+        XCTAssertEqual(
+            store.rankedBrowsers(
+                [safari, firefox],
+                preferredBundleIdentifier: "org.mozilla.firefox"
+            ).map(\.bundleIdentifier),
+            [
+                "org.mozilla.firefox",
+                "com.apple.Safari"
+            ]
+        )
+    }
+
     func testRankedBrowsersIgnoreMalformedTextFileLines() throws {
         let fileURL = makeTemporaryFileURL()
         try FileManager.default.createDirectory(

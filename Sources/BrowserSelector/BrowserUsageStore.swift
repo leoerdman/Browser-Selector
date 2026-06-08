@@ -24,7 +24,10 @@ final class BrowserUsageStore {
         self.fileURL = fileURL
     }
 
-    func rankedBrowsers(_ browsers: [Browser]) -> [Browser] {
+    func rankedBrowsers(
+        _ browsers: [Browser],
+        preferredBundleIdentifier: String? = nil
+    ) -> [Browser] {
         let usageCounts = queue.sync {
             (try? loadUsageCounts()) ?? [:]
         }
@@ -38,6 +41,12 @@ final class BrowserUsageStore {
 
             if lhsCount != rhsCount {
                 return lhsCount > rhsCount
+            }
+
+            if let preferredBundleIdentifier,
+               lhs.bundleIdentifier != rhs.bundleIdentifier,
+               lhs.bundleIdentifier == preferredBundleIdentifier || rhs.bundleIdentifier == preferredBundleIdentifier {
+                return lhs.bundleIdentifier == preferredBundleIdentifier
             }
 
             return (originalIndices[lhs.bundleIdentifier] ?? 0) < (originalIndices[rhs.bundleIdentifier] ?? 0)

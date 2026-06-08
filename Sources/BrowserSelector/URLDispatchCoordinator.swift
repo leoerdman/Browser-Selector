@@ -45,7 +45,13 @@ final class URLDispatchCoordinator {
         preferences.reconcileRememberedBrowser(
             availableBundleIdentifiers: Set(discoveredBrowsers.map(\.bundleIdentifier))
         )
-        let browsers = browserUsageStore.rankedBrowsers(discoveredBrowsers)
+        let preferredBundleIdentifier = preferences.rememberLastBrowser
+            ? preferences.lastBrowserBundleIdentifier
+            : nil
+        let browsers = browserUsageStore.rankedBrowsers(
+            discoveredBrowsers,
+            preferredBundleIdentifier: preferredBundleIdentifier
+        )
         guard !browsers.isEmpty else {
             UserNotifier.showError(
                 title: "Браузеры не найдены",
