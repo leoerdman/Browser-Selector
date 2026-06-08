@@ -28,6 +28,16 @@ if ! /usr/libexec/PlistBuddy -c "Print :NSAppleEventsUsageDescription" "${INFO_P
     exit 1
 fi
 
+if [[ "$(/usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes:0:LSHandlerRank" "${INFO_PLIST}")" != "Owner" ]]; then
+    echo "CFBundleURLTypes:0:LSHandlerRank must be Owner" >&2
+    exit 1
+fi
+
+if [[ ! -x "${ROOT_DIR}/Scripts/set_default_browser.swift" ]]; then
+    echo "Scripts/set_default_browser.swift must be executable" >&2
+    exit 1
+fi
+
 if [[ "${#SWIFT_PACKAGE_FLAGS[@]}" -gt 0 ]]; then
     swift test "${SWIFT_PACKAGE_FLAGS[@]}"
 else

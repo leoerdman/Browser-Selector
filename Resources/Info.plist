@@ -25,6 +25,8 @@
         <dict>
             <key>CFBundleTypeRole</key>
             <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Owner</string>
             <key>CFBundleURLName</key>
             <string>Web URL Handler</string>
             <key>CFBundleURLSchemes</key>

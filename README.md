@@ -25,6 +25,7 @@
 ```
 
 Скрипт соберет приложение, установит его в `~/Applications/Browser Selector.app`, зарегистрирует bundle в LaunchServices и запустит приложение.
+После установки скрипт явно назначает Browser Selector обработчиком `http` и `https` и проверяет, что LaunchServices применил это назначение.
 
 При первом запуске нажмите `Назначить`, затем подтвердите системный запрос macOS, если он появится. После этого все web-ссылки будут попадать в Browser Selector.
 
@@ -67,6 +68,8 @@ CODE_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./Scripts/buil
 - В том же контекстном меню есть `Rename`: пользовательское имя сохраняется локально и показывается в chooser и menu bar.
 - Статистика успешных открытий остается главным источником порядка: чаще используемые браузеры идут левее; запомненный браузер используется как tie-breaker при равной статистике.
 - Menu bar показывает текущий запомненный браузер и позволяет сбросить его через `Сбросить запомненный браузер`.
+
+Важно: Browser Selector перехватывает обычные `http`/`https` открытия через LaunchServices. Системные authentication sessions и associated-domain prompts, например `ChatGPT.app wants to use auth.openai.com to Sign In`, создаются самим приложением через macOS auth APIs и могут не проходить через default browser handler.
 
 ## Требования
 
