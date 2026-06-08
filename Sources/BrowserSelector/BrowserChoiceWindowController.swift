@@ -334,6 +334,9 @@ final class BrowserChoiceWindowController: NSWindowController {
             return
         }
 
+        let selectedBrowserIdentifier = browsers.indices.contains(selectedIndex)
+            ? browsers[selectedIndex].bundleIdentifier
+            : nil
         browsers.remove(at: index)
 
         let button = browserTileButtons.remove(at: index)
@@ -344,7 +347,12 @@ final class BrowserChoiceWindowController: NSWindowController {
             button.tag = newIndex
         }
 
-        selectedIndex = min(selectedIndex, max(0, browsers.count - 1))
+        if let selectedBrowserIdentifier,
+           let newSelectedIndex = browsers.firstIndex(where: { $0.bundleIdentifier == selectedBrowserIdentifier }) {
+            selectedIndex = newSelectedIndex
+        } else {
+            selectedIndex = min(index, max(0, browsers.count - 1))
+        }
         updateTileSelection()
         updateWindowMetrics()
     }
@@ -421,6 +429,8 @@ final class BrowserChoiceWindowController: NSWindowController {
             return
         }
 
+        stopOutsideClickMonitor()
+
         let alert = NSAlert()
         alert.alertStyle = .informational
         alert.messageText = "Rename Browser"
@@ -434,17 +444,25 @@ final class BrowserChoiceWindowController: NSWindowController {
         alert.accessoryView = textField
 
         alert.beginSheetModal(for: window) { [weak self, weak textField] response in
+            guard let self else {
+                return
+            }
+
+            if !self.didComplete {
+                self.startOutsideClickMonitor()
+            }
+
             guard response == .alertFirstButtonReturn,
                   let customDisplayName = textField?.stringValue
             else {
                 return
             }
 
-            self?.preferences.setCustomBrowserDisplayName(
+            self.preferences.setCustomBrowserDisplayName(
                 bundleIdentifier: browser.bundleIdentifier,
                 displayName: customDisplayName
             )
-            self?.updateBrowserDisplayName(bundleIdentifier: browser.bundleIdentifier)
+            self.updateBrowserDisplayName(bundleIdentifier: browser.bundleIdentifier)
         }
     }
 

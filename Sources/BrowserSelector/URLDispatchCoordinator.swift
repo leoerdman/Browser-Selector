@@ -98,16 +98,20 @@ final class URLDispatchCoordinator {
 
             browserLauncher.open(url, in: browser) { [weak self] openResult in
                 DispatchQueue.main.async {
+                    guard let self else {
+                        return
+                    }
+
                     switch openResult {
                     case .success:
-                        self?.recordBrowserUse(browser)
-                        self?.finishActiveURL()
+                        self.recordBrowserUse(browser)
+                        self.finishActiveURL()
                     case let .failure(error):
                         UserNotifier.showError(
                             title: "Не удалось открыть ссылку",
-                            message: "\(browser.displayName): \(error.localizedDescription)"
+                            message: "\(browser.displayName(preferences: self.preferences)): \(error.localizedDescription)"
                         ) {
-                            self?.finishActiveURL()
+                            self.finishActiveURL()
                         }
                     }
                 }
@@ -121,7 +125,7 @@ final class URLDispatchCoordinator {
         } catch {
             UserNotifier.showError(
                 title: "Не удалось сохранить статистику браузера",
-                message: "Ссылка открыта, но статистика использования \(browser.displayName) не сохранена: \(error.localizedDescription)"
+                message: "Ссылка открыта, но статистика использования \(browser.displayName(preferences: preferences)) не сохранена: \(error.localizedDescription)"
             )
         }
     }

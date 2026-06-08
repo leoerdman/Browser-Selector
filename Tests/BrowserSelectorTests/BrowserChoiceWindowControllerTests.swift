@@ -213,6 +213,63 @@ final class BrowserChoiceWindowControllerTests: XCTestCase {
         }
     }
 
+    func testHidingBrowserBeforeSelectedOneKeepsSameLogicalSelectionForReturn() {
+        runOnMainThread {
+            let chrome = Self.makeBrowser(bundleIdentifier: "com.google.Chrome", displayName: "Google Chrome")
+            let firefox = Self.makeBrowser(bundleIdentifier: "org.mozilla.firefox", displayName: "Firefox")
+            let safari = Self.makeBrowser(bundleIdentifier: "com.apple.Safari", displayName: "Safari")
+            let preferences = Preferences(userDefaults: UserDefaults(suiteName: UUID().uuidString)!)
+            var openedBrowserIdentifier: String?
+
+            let controller = BrowserChoiceWindowController(
+                browsers: [chrome, firefox, safari],
+                preferences: preferences
+            ) { result in
+                if case let .open(browser) = result {
+                    openedBrowserIdentifier = browser.bundleIdentifier
+                }
+            }
+
+            guard let window = controller.window,
+                  let chromeButton = self.tryFindBrowserTileButton(
+                    in: controller,
+                    bundleIdentifier: "com.google.Chrome"
+                  ),
+                  let hideItem = chromeButton.menu?.items.first(where: { $0.title == "Hide" }),
+                  let hideAction = hideItem.action
+            else {
+                XCTFail("Expected chooser window and Chrome Hide item.")
+                return
+            }
+
+            window.sendEvent(Self.rightArrowKeyEvent(windowNumber: window.windowNumber))
+            window.sendEvent(Self.rightArrowKeyEvent(windowNumber: window.windowNumber))
+            NSApp.sendAction(hideAction, to: hideItem.target, from: hideItem)
+            window.sendEvent(Self.returnKeyEvent(windowNumber: window.windowNumber))
+
+            XCTAssertEqual(openedBrowserIdentifier, "com.apple.Safari")
+        }
+    }
+
+    func testCustomBrowserDisplayNameIsRenderedInTile() {
+        runOnMainThread {
+            let chrome = Self.makeBrowser(bundleIdentifier: "com.google.Chrome", displayName: "Google Chrome")
+            let preferences = Preferences(userDefaults: UserDefaults(suiteName: UUID().uuidString)!)
+            preferences.setCustomBrowserDisplayName(bundleIdentifier: "com.google.Chrome", displayName: "Work")
+
+            let controller = BrowserChoiceWindowController(
+                browsers: [chrome],
+                preferences: preferences
+            ) { _ in }
+
+            let labelText = self.allSubviews(of: controller.window?.contentView ?? NSView())
+                .compactMap { ($0 as? NSTextField)?.stringValue }
+
+            XCTAssertTrue(labelText.contains("Work"))
+            XCTAssertFalse(labelText.contains("Chrome"))
+        }
+    }
+
     func testBrowserContextMenuIncludesRenameBeforeHide() {
         runOnMainThread {
             let safari = Self.makeBrowser(bundleIdentifier: "com.apple.Safari", displayName: "Safari")
