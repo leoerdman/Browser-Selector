@@ -6,6 +6,11 @@ INFO_PLIST="${ROOT_DIR}/Resources/Info.plist"
 APP_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "${INFO_PLIST}")"
 APP_DIR="${ROOT_DIR}/dist/${APP_NAME}.app"
 BUILT_INFO_PLIST="${APP_DIR}/Contents/Info.plist"
+SWIFT_PACKAGE_FLAGS=()
+
+if [[ "${SWIFTPM_DISABLE_SANDBOX:-0}" == "1" ]]; then
+    SWIFT_PACKAGE_FLAGS+=(--disable-sandbox)
+fi
 
 cd "${ROOT_DIR}"
 
@@ -23,7 +28,11 @@ if ! /usr/libexec/PlistBuddy -c "Print :NSAppleEventsUsageDescription" "${INFO_P
     exit 1
 fi
 
-swift test
+if [[ "${#SWIFT_PACKAGE_FLAGS[@]}" -gt 0 ]]; then
+    swift test "${SWIFT_PACKAGE_FLAGS[@]}"
+else
+    swift test
+fi
 
 "${ROOT_DIR}/Scripts/build.sh"
 

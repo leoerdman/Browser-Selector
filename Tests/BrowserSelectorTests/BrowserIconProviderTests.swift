@@ -7,7 +7,7 @@ final class BrowserIconProviderTests: XCTestCase {
         let sourceIcon = NSImage(size: NSSize(width: 24, height: 24))
         sourceIcon.lockFocus()
         NSColor.black.setFill()
-        NSBezierPath(ovalIn: NSRect(x: 0, y: 0, width: 24, height: 24)).fill()
+        NSRect(x: 0, y: 0, width: 24, height: 24).fill()
         sourceIcon.unlockFocus()
 
         let icon = try XCTUnwrap(
@@ -25,5 +25,8 @@ final class BrowserIconProviderTests: XCTestCase {
         XCTAssertEqual(bitmapRepresentation.pixelsWide, 128)
         XCTAssertEqual(bitmapRepresentation.pixelsHigh, 128)
         XCTAssertEqual(bitmapRepresentation.size, NSSize(width: 46, height: 46))
+
+        let rightEdgeColor = try XCTUnwrap(bitmapRepresentation.colorAt(x: 120, y: 64))
+        XCTAssertGreaterThan(rightEdgeColor.alphaComponent, 0.95)
     }
 }

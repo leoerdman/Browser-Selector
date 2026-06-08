@@ -12,13 +12,22 @@ CONTENTS_DIR="${APP_DIR}/Contents"
 RESOURCES_DIR="${CONTENTS_DIR}/Resources"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
 SIGN_IDENTITY="${CODE_SIGN_IDENTITY:-}"
+SWIFT_PACKAGE_FLAGS=()
+
+if [[ "${SWIFTPM_DISABLE_SANDBOX:-0}" == "1" ]]; then
+    SWIFT_PACKAGE_FLAGS+=(--disable-sandbox)
+fi
 
 cd "${ROOT_DIR}"
 
 swift Scripts/generate_icon.swift
 iconutil -c icns -o Resources/BrowserSelector.icns Resources/BrowserSelector.iconset
 
-swift build -c release
+if [[ "${#SWIFT_PACKAGE_FLAGS[@]}" -gt 0 ]]; then
+    swift build "${SWIFT_PACKAGE_FLAGS[@]}" -c release
+else
+    swift build -c release
+fi
 
 rm -rf "${APP_DIR}"
 mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}"

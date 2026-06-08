@@ -61,13 +61,15 @@ final class BrowserIconProvider: BrowserIconProviding {
                 colorSpaceName: .deviceRGB,
                 bytesPerRow: 0,
                 bitsPerPixel: 0
-              ),
-              let context = NSGraphicsContext(bitmapImageRep: bitmap)
+              )
         else {
             return nil
         }
 
         bitmap.size = displaySize
+        guard let context = NSGraphicsContext(bitmapImageRep: bitmap) else {
+            return nil
+        }
 
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = context

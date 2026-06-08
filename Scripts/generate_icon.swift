@@ -7,6 +7,9 @@ let rootDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPat
 let resourcesDirectory = rootDirectory.appendingPathComponent("Resources", isDirectory: true)
 let iconsetDirectory = resourcesDirectory.appendingPathComponent("BrowserSelector.iconset", isDirectory: true)
 
+if FileManager.default.fileExists(atPath: iconsetDirectory.path) {
+    try FileManager.default.removeItem(at: iconsetDirectory)
+}
 try FileManager.default.createDirectory(at: iconsetDirectory, withIntermediateDirectories: true)
 
 struct IconVariant {
