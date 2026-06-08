@@ -180,7 +180,7 @@ final class BrowserChoiceWindowController: NSWindowController {
             button.target = self
             button.action = #selector(browserTileDidClick(_:))
             button.isDefaultChoice = browser.bundleIdentifier == rememberedBrowserIdentifier
-            button.menu = contextMenu
+            button.menu = makeBrowserMenu(for: browser)
 
             stackView.addArrangedSubview(button)
             browserTileButtons.append(button)
@@ -217,6 +217,17 @@ final class BrowserChoiceWindowController: NSWindowController {
         markRememberedBrowser(nil)
     }
 
+    @objc private func hideBrowser(_ sender: NSMenuItem) {
+        guard let bundleIdentifier = sender.representedObject as? String,
+              canHideBrowser(bundleIdentifier: bundleIdentifier)
+        else {
+            return
+        }
+
+        preferences.setBrowserVisibility(bundleIdentifier: bundleIdentifier, isVisible: false)
+        complete(.cancel)
+    }
+
     private func makeResetMenu() -> NSMenu {
         let menu = NSMenu()
         let resetItem = NSMenuItem(
@@ -226,6 +237,32 @@ final class BrowserChoiceWindowController: NSWindowController {
         )
         resetItem.target = self
         menu.addItem(resetItem)
+        return menu
+    }
+
+    private func makeBrowserMenu(for browser: Browser) -> NSMenu {
+        let menu = NSMenu()
+
+        let hideItem = NSMenuItem(
+            title: "Hide",
+            action: #selector(hideBrowser(_:)),
+            keyEquivalent: ""
+        )
+        hideItem.target = self
+        hideItem.representedObject = browser.bundleIdentifier
+        hideItem.isEnabled = canHideBrowser(bundleIdentifier: browser.bundleIdentifier)
+        menu.addItem(hideItem)
+
+        menu.addItem(.separator())
+
+        let resetItem = NSMenuItem(
+            title: "Reset remembered choice",
+            action: #selector(resetRememberedChoice),
+            keyEquivalent: ""
+        )
+        resetItem.target = self
+        menu.addItem(resetItem)
+
         return menu
     }
 
@@ -301,6 +338,13 @@ final class BrowserChoiceWindowController: NSWindowController {
         outsideClickMonitor = nil
     }
 
+    private func canHideBrowser(bundleIdentifier: String) -> Bool {
+        browsers
+            .map(\.bundleIdentifier)
+            .filter { $0 != bundleIdentifier && preferences.isBrowserVisible(bundleIdentifier: $0) }
+            .isEmpty == false
+    }
+
     private static func windowMetrics(forBrowserCount browserCount: Int) -> (windowWidth: CGFloat, tileWidth: CGFloat) {
         let count = CGFloat(max(browserCount, 1))
         let screenLimit = NSScreen.main.map { $0.visibleFrame.width * Layout.maxScreenWidthFraction } ?? 900
@@ -330,6 +374,11 @@ extension BrowserChoiceWindowController: NSWindowDelegate {
 extension BrowserChoiceWindowController: NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         guard menuItem.action == #selector(resetRememberedChoice) else {
+            if menuItem.action == #selector(hideBrowser(_:)),
+               let bundleIdentifier = menuItem.representedObject as? String {
+                return canHideBrowser(bundleIdentifier: bundleIdentifier)
+            }
+
             return true
         }
 

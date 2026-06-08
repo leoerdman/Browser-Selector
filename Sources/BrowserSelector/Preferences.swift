@@ -8,6 +8,7 @@ final class Preferences {
         case rememberLastBrowser
         case lastBrowserBundleIdentifier
         case rememberDefaultPolicyVersion
+        case hiddenBrowserBundleIdentifiers
     }
 
     private let userDefaults: UserDefaults
@@ -63,6 +64,29 @@ final class Preferences {
         }
     }
 
+    var hiddenBrowserBundleIdentifiers: Set<String> {
+        Set(userDefaults.stringArray(forKey: Key.hiddenBrowserBundleIdentifiers.rawValue) ?? [])
+    }
+
+    func isBrowserVisible(bundleIdentifier: String) -> Bool {
+        !hiddenBrowserBundleIdentifiers.contains(bundleIdentifier)
+    }
+
+    func setBrowserVisibility(bundleIdentifier: String, isVisible: Bool) {
+        var hiddenBundleIdentifiers = hiddenBrowserBundleIdentifiers
+
+        if isVisible {
+            hiddenBundleIdentifiers.remove(bundleIdentifier)
+        } else {
+            hiddenBundleIdentifiers.insert(bundleIdentifier)
+            if lastBrowserBundleIdentifier == bundleIdentifier {
+                userDefaults.removeObject(forKey: Key.lastBrowserBundleIdentifier.rawValue)
+            }
+        }
+
+        setHiddenBrowserBundleIdentifiers(hiddenBundleIdentifiers)
+    }
+
     func resetRememberedBrowserChoice() {
         let changed = rememberLastBrowser || lastBrowserBundleIdentifier != nil
         userDefaults.set(false, forKey: Key.rememberLastBrowser.rawValue)
@@ -85,6 +109,8 @@ final class Preferences {
     }
 
     func reconcileRememberedBrowser(availableBundleIdentifiers: Set<String>) {
+        reconcileHiddenBrowsers(availableBundleIdentifiers: availableBundleIdentifiers)
+
         guard rememberLastBrowser else {
             guard lastBrowserBundleIdentifier != nil else {
                 return
@@ -102,6 +128,35 @@ final class Preferences {
         }
 
         resetRememberedBrowserChoice()
+    }
+
+    private func reconcileHiddenBrowsers(availableBundleIdentifiers: Set<String>) {
+        let hiddenBundleIdentifiers = hiddenBrowserBundleIdentifiers
+        let reconciledHiddenBundleIdentifiers = hiddenBundleIdentifiers.intersection(availableBundleIdentifiers)
+
+        guard reconciledHiddenBundleIdentifiers != hiddenBundleIdentifiers else {
+            return
+        }
+
+        setHiddenBrowserBundleIdentifiers(reconciledHiddenBundleIdentifiers)
+    }
+
+    private func setHiddenBrowserBundleIdentifiers(_ bundleIdentifiers: Set<String>) {
+        let sortedBundleIdentifiers = bundleIdentifiers.sorted {
+            $0.localizedStandardCompare($1) == .orderedAscending
+        }
+
+        let storedBundleIdentifiers = userDefaults.stringArray(forKey: Key.hiddenBrowserBundleIdentifiers.rawValue) ?? []
+        guard sortedBundleIdentifiers != storedBundleIdentifiers else {
+            return
+        }
+
+        if sortedBundleIdentifiers.isEmpty {
+            userDefaults.removeObject(forKey: Key.hiddenBrowserBundleIdentifiers.rawValue)
+        } else {
+            userDefaults.set(sortedBundleIdentifiers, forKey: Key.hiddenBrowserBundleIdentifiers.rawValue)
+        }
+        notifyChanged()
     }
 
     private func notifyChanged() {

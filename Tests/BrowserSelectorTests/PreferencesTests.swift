@@ -79,6 +79,43 @@ final class PreferencesTests: XCTestCase {
         XCTAssertNil(preferences.lastBrowserBundleIdentifier)
     }
 
+    func testBrowserVisibilityPersistsHiddenBrowserIdentifiers() {
+        let preferences = makePreferences()
+
+        XCTAssertTrue(preferences.isBrowserVisible(bundleIdentifier: "com.google.Chrome"))
+
+        preferences.setBrowserVisibility(bundleIdentifier: "com.google.Chrome", isVisible: false)
+        XCTAssertFalse(preferences.isBrowserVisible(bundleIdentifier: "com.google.Chrome"))
+        XCTAssertEqual(preferences.hiddenBrowserBundleIdentifiers, Set(["com.google.Chrome"]))
+
+        preferences.setBrowserVisibility(bundleIdentifier: "com.google.Chrome", isVisible: true)
+        XCTAssertTrue(preferences.isBrowserVisible(bundleIdentifier: "com.google.Chrome"))
+        XCTAssertTrue(preferences.hiddenBrowserBundleIdentifiers.isEmpty)
+    }
+
+    func testHidingRememberedBrowserClearsRememberedIdentifier() {
+        let preferences = makePreferences()
+        preferences.rememberLastBrowser = true
+        preferences.lastBrowserBundleIdentifier = "com.google.Chrome"
+
+        preferences.setBrowserVisibility(bundleIdentifier: "com.google.Chrome", isVisible: false)
+
+        XCTAssertTrue(preferences.rememberLastBrowser)
+        XCTAssertNil(preferences.lastBrowserBundleIdentifier)
+    }
+
+    func testReconcileRememberedBrowserRemovesHiddenBrowsersThatAreNoLongerInstalled() {
+        let preferences = makePreferences()
+        preferences.setBrowserVisibility(bundleIdentifier: "com.google.Chrome", isVisible: false)
+        preferences.setBrowserVisibility(bundleIdentifier: "org.mozilla.firefox", isVisible: false)
+
+        preferences.reconcileRememberedBrowser(
+            availableBundleIdentifiers: ["org.mozilla.firefox"]
+        )
+
+        XCTAssertEqual(preferences.hiddenBrowserBundleIdentifiers, Set(["org.mozilla.firefox"]))
+    }
+
     private func makePreferences() -> Preferences {
         Preferences(userDefaults: UserDefaults(suiteName: UUID().uuidString)!)
     }

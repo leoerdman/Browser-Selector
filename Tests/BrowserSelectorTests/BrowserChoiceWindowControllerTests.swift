@@ -166,6 +166,68 @@ final class BrowserChoiceWindowControllerTests: XCTestCase {
         }
     }
 
+    func testBrowserContextMenuHidePersistsHiddenBrowserAndCancelsChooser() {
+        runOnMainThread {
+            let chrome = Self.makeBrowser(bundleIdentifier: "com.google.Chrome", displayName: "Google Chrome")
+            let safari = Self.makeBrowser(bundleIdentifier: "com.apple.Safari", displayName: "Safari")
+            let preferences = Preferences(userDefaults: UserDefaults(suiteName: UUID().uuidString)!)
+            var results: [BrowserChoiceResult] = []
+
+            let controller = BrowserChoiceWindowController(
+                browsers: [chrome, safari],
+                preferences: preferences
+            ) { result in
+                results.append(result)
+            }
+
+            let chromeButton = self.tryFindBrowserTileButton(
+                in: controller,
+                bundleIdentifier: "com.google.Chrome"
+            )
+            guard let hideItem = chromeButton?.menu?.items.first(where: { $0.title == "Hide" }) else {
+                XCTFail("Expected browser tile context menu to contain Hide.")
+                return
+            }
+
+            guard let action = hideItem.action else {
+                XCTFail("Expected Hide menu item to have an action.")
+                return
+            }
+
+            NSApp.sendAction(action, to: hideItem.target, from: hideItem)
+
+            XCTAssertFalse(preferences.isBrowserVisible(bundleIdentifier: "com.google.Chrome"))
+            XCTAssertEqual(results.count, 1)
+            guard case .cancel = results[0] else {
+                XCTFail("Expected hiding a browser from the chooser to cancel the active chooser.")
+                return
+            }
+        }
+    }
+
+    func testBrowserContextMenuDoesNotAllowHidingLastVisibleBrowser() {
+        runOnMainThread {
+            let safari = Self.makeBrowser(bundleIdentifier: "com.apple.Safari", displayName: "Safari")
+            let preferences = Preferences(userDefaults: UserDefaults(suiteName: UUID().uuidString)!)
+
+            let controller = BrowserChoiceWindowController(
+                browsers: [safari],
+                preferences: preferences
+            ) { _ in }
+
+            let safariButton = self.tryFindBrowserTileButton(
+                in: controller,
+                bundleIdentifier: "com.apple.Safari"
+            )
+            guard let hideItem = safariButton?.menu?.items.first(where: { $0.title == "Hide" }) else {
+                XCTFail("Expected browser tile context menu to contain Hide.")
+                return
+            }
+
+            XCTAssertFalse(hideItem.isEnabled)
+        }
+    }
+
     private func runOnMainThread(_ body: @escaping () -> Void) {
         if Thread.isMainThread {
             body()
@@ -181,6 +243,23 @@ final class BrowserChoiceWindowControllerTests: XCTestCase {
             bundleURL: URL(fileURLWithPath: "/Applications/\(displayName).app"),
             icon: NSImage(size: NSSize(width: 36, height: 36))
         )
+    }
+
+    private func tryFindBrowserTileButton(
+        in controller: BrowserChoiceWindowController,
+        bundleIdentifier: String
+    ) -> BrowserTileButton? {
+        guard let contentView = controller.window?.contentView else {
+            return nil
+        }
+
+        return allSubviews(of: contentView)
+            .compactMap { $0 as? BrowserTileButton }
+            .first { $0.browserBundleIdentifier == bundleIdentifier }
+    }
+
+    private func allSubviews(of view: NSView) -> [NSView] {
+        view.subviews + view.subviews.flatMap { allSubviews(of: $0) }
     }
 
     private static func escapeKeyEvent(windowNumber: Int) -> NSEvent {

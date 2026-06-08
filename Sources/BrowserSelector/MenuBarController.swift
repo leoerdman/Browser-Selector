@@ -136,6 +136,8 @@ final class MenuBarController: NSObject {
         browserCountItem.isEnabled = false
         menu.addItem(browserCountItem)
 
+        addBrowserVisibilityItems(to: menu, browsers: browsers)
+
         menu.addItem(.separator())
 
         let aboutItem = NSMenuItem(title: "О Browser Selector", action: #selector(showAbout), keyEquivalent: "")
@@ -179,6 +181,46 @@ final class MenuBarController: NSObject {
         delegate?.menuBarControllerDidRequestAbout(self)
     }
 
+    @objc private func toggleBrowserVisibility(_ sender: NSMenuItem) {
+        guard let bundleIdentifier = sender.representedObject as? String else {
+            return
+        }
+
+        let shouldShow = !preferences.isBrowserVisible(bundleIdentifier: bundleIdentifier)
+        guard shouldShow || canHideBrowser(bundleIdentifier: bundleIdentifier, browsers: browserRepository.installedBrowsers()) else {
+            return
+        }
+
+        preferences.setBrowserVisibility(bundleIdentifier: bundleIdentifier, isVisible: shouldShow)
+        refreshMenu()
+    }
+
+    private func addBrowserVisibilityItems(to menu: NSMenu, browsers: [Browser]) {
+        guard !browsers.isEmpty else {
+            return
+        }
+
+        let sectionTitle = NSMenuItem(title: "Показывать браузеры", action: nil, keyEquivalent: "")
+        sectionTitle.isEnabled = false
+        menu.addItem(sectionTitle)
+
+        for browser in browsers {
+            let item = NSMenuItem(
+                title: browser.shortDisplayName,
+                action: #selector(toggleBrowserVisibility(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = browser.bundleIdentifier
+            item.state = preferences.isBrowserVisible(bundleIdentifier: browser.bundleIdentifier) ? .on : .off
+            item.isEnabled = item.state == .off || canHideBrowser(
+                bundleIdentifier: browser.bundleIdentifier,
+                browsers: browsers
+            )
+            menu.addItem(item)
+        }
+    }
+
     private func rememberedBrowserTitle(in browsers: [Browser]) -> String {
         guard preferences.rememberLastBrowser else {
             return "Браузер по умолчанию: не запоминать"
@@ -211,5 +253,12 @@ final class MenuBarController: NSObject {
         }
 
         return "\(count) \(suffix)"
+    }
+
+    private func canHideBrowser(bundleIdentifier: String, browsers: [Browser]) -> Bool {
+        browsers.contains {
+            $0.bundleIdentifier != bundleIdentifier
+                && preferences.isBrowserVisible(bundleIdentifier: $0.bundleIdentifier)
+        }
     }
 }

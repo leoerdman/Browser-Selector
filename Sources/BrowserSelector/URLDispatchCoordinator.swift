@@ -45,17 +45,30 @@ final class URLDispatchCoordinator {
         preferences.reconcileRememberedBrowser(
             availableBundleIdentifiers: Set(discoveredBrowsers.map(\.bundleIdentifier))
         )
+        guard !discoveredBrowsers.isEmpty else {
+            UserNotifier.showError(
+                title: "Браузеры не найдены",
+                message: "LaunchServices не вернул ни одного приложения, которое умеет открывать web-ссылки."
+            ) { [weak self] in
+                self?.finishActiveURL()
+            }
+            return
+        }
+
+        let visibleDiscoveredBrowsers = discoveredBrowsers.filter {
+            preferences.isBrowserVisible(bundleIdentifier: $0.bundleIdentifier)
+        }
         let preferredBundleIdentifier = preferences.rememberLastBrowser
             ? preferences.lastBrowserBundleIdentifier
             : nil
         let browsers = browserUsageStore.rankedBrowsers(
-            discoveredBrowsers,
+            visibleDiscoveredBrowsers,
             preferredBundleIdentifier: preferredBundleIdentifier
         )
         guard !browsers.isEmpty else {
             UserNotifier.showError(
-                title: "Браузеры не найдены",
-                message: "LaunchServices не вернул ни одного приложения, которое умеет открывать web-ссылки."
+                title: "Нет видимых браузеров",
+                message: "Все найденные браузеры скрыты. В menu bar включите хотя бы один браузер."
             ) { [weak self] in
                 self?.finishActiveURL()
             }
