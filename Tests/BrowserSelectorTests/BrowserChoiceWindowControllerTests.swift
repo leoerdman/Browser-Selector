@@ -166,7 +166,7 @@ final class BrowserChoiceWindowControllerTests: XCTestCase {
         }
     }
 
-    func testBrowserContextMenuHidePersistsHiddenBrowserAndCancelsChooser() {
+    func testBrowserContextMenuHidePersistsHiddenBrowserAndKeepsChooserOpen() {
         runOnMainThread {
             let chrome = Self.makeBrowser(bundleIdentifier: "com.google.Chrome", displayName: "Google Chrome")
             let safari = Self.makeBrowser(bundleIdentifier: "com.apple.Safari", displayName: "Safari")
@@ -197,11 +197,39 @@ final class BrowserChoiceWindowControllerTests: XCTestCase {
             NSApp.sendAction(action, to: hideItem.target, from: hideItem)
 
             XCTAssertFalse(preferences.isBrowserVisible(bundleIdentifier: "com.google.Chrome"))
-            XCTAssertEqual(results.count, 1)
-            guard case .cancel = results[0] else {
-                XCTFail("Expected hiding a browser from the chooser to cancel the active chooser.")
-                return
-            }
+            XCTAssertTrue(results.isEmpty)
+            XCTAssertNil(
+                self.tryFindBrowserTileButton(
+                    in: controller,
+                    bundleIdentifier: "com.google.Chrome"
+                )
+            )
+            XCTAssertNotNil(
+                self.tryFindBrowserTileButton(
+                    in: controller,
+                    bundleIdentifier: "com.apple.Safari"
+                )
+            )
+        }
+    }
+
+    func testBrowserContextMenuIncludesRenameBeforeHide() {
+        runOnMainThread {
+            let safari = Self.makeBrowser(bundleIdentifier: "com.apple.Safari", displayName: "Safari")
+            let preferences = Preferences(userDefaults: UserDefaults(suiteName: UUID().uuidString)!)
+
+            let controller = BrowserChoiceWindowController(
+                browsers: [safari],
+                preferences: preferences
+            ) { _ in }
+
+            let safariButton = self.tryFindBrowserTileButton(
+                in: controller,
+                bundleIdentifier: "com.apple.Safari"
+            )
+
+            XCTAssertEqual(safariButton?.menu?.items.first?.title, "Rename")
+            XCTAssertEqual(safariButton?.menu?.items.dropFirst().first?.title, "Hide")
         }
     }
 

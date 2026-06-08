@@ -20,12 +20,13 @@ final class BrowserChoiceWindowController: NSWindowController {
         }
     }
 
-    private let browsers: [Browser]
+    private var browsers: [Browser]
     private let preferences: Preferences
     private let completion: (BrowserChoiceResult) -> Void
-    private let tileWidth: CGFloat
+    private var tileWidth: CGFloat
 
     private var browserTileButtons: [BrowserTileButton] = []
+    private var browserTileWidthConstraints: [NSLayoutConstraint] = []
     private lazy var contextMenu = makeResetMenu()
     private var selectedIndex: Int
     private var didComplete = false
@@ -175,7 +176,7 @@ final class BrowserChoiceWindowController: NSWindowController {
             : nil
 
         for (index, browser) in browsers.enumerated() {
-            let button = BrowserTileButton(browser: browser)
+            let button = BrowserTileButton(browser: browser, displayName: browser.displayName(preferences: preferences))
             button.tag = index
             button.target = self
             button.action = #selector(browserTileDidClick(_:))
@@ -184,8 +185,10 @@ final class BrowserChoiceWindowController: NSWindowController {
 
             stackView.addArrangedSubview(button)
             browserTileButtons.append(button)
+            let widthConstraint = button.widthAnchor.constraint(equalToConstant: tileWidth)
+            browserTileWidthConstraints.append(widthConstraint)
             NSLayoutConstraint.activate([
-                button.widthAnchor.constraint(equalToConstant: tileWidth),
+                widthConstraint,
                 button.heightAnchor.constraint(equalToConstant: Layout.tileHeight)
             ])
         }
@@ -225,7 +228,17 @@ final class BrowserChoiceWindowController: NSWindowController {
         }
 
         preferences.setBrowserVisibility(bundleIdentifier: bundleIdentifier, isVisible: false)
-        complete(.cancel)
+        removeBrowser(bundleIdentifier: bundleIdentifier)
+    }
+
+    @objc private func renameBrowser(_ sender: NSMenuItem) {
+        guard let bundleIdentifier = sender.representedObject as? String,
+              let browser = browsers.first(where: { $0.bundleIdentifier == bundleIdentifier })
+        else {
+            return
+        }
+
+        promptForBrowserRename(browser)
     }
 
     private func makeResetMenu() -> NSMenu {
@@ -242,6 +255,15 @@ final class BrowserChoiceWindowController: NSWindowController {
 
     private func makeBrowserMenu(for browser: Browser) -> NSMenu {
         let menu = NSMenu()
+
+        let renameItem = NSMenuItem(
+            title: "Rename",
+            action: #selector(renameBrowser(_:)),
+            keyEquivalent: ""
+        )
+        renameItem.target = self
+        renameItem.representedObject = browser.bundleIdentifier
+        menu.addItem(renameItem)
 
         let hideItem = NSMenuItem(
             title: "Hide",
@@ -307,6 +329,36 @@ final class BrowserChoiceWindowController: NSWindowController {
         }
     }
 
+    private func removeBrowser(bundleIdentifier: String) {
+        guard let index = browsers.firstIndex(where: { $0.bundleIdentifier == bundleIdentifier }) else {
+            return
+        }
+
+        browsers.remove(at: index)
+
+        let button = browserTileButtons.remove(at: index)
+        browserTileWidthConstraints.remove(at: index).isActive = false
+        button.removeFromSuperview()
+
+        for (newIndex, button) in browserTileButtons.enumerated() {
+            button.tag = newIndex
+        }
+
+        selectedIndex = min(selectedIndex, max(0, browsers.count - 1))
+        updateTileSelection()
+        updateWindowMetrics()
+    }
+
+    private func updateBrowserDisplayName(bundleIdentifier: String) {
+        guard let browserIndex = browsers.firstIndex(where: { $0.bundleIdentifier == bundleIdentifier }) else {
+            return
+        }
+
+        browserTileButtons[browserIndex].updateDisplayName(
+            browsers[browserIndex].displayName(preferences: preferences)
+        )
+    }
+
     private func markRememberedBrowser(_ bundleIdentifier: String?) {
         for button in browserTileButtons {
             button.isDefaultChoice = button.browserBundleIdentifier == bundleIdentifier
@@ -343,6 +395,57 @@ final class BrowserChoiceWindowController: NSWindowController {
             .map(\.bundleIdentifier)
             .filter { $0 != bundleIdentifier && preferences.isBrowserVisible(bundleIdentifier: $0) }
             .isEmpty == false
+    }
+
+    private func updateWindowMetrics() {
+        guard let window else {
+            return
+        }
+
+        let metrics = Self.windowMetrics(forBrowserCount: browsers.count)
+        tileWidth = metrics.tileWidth
+        browserTileWidthConstraints.forEach { $0.constant = metrics.tileWidth }
+
+        var frame = window.frame
+        let center = NSPoint(x: frame.midX, y: frame.midY)
+        frame.size.width = metrics.windowWidth
+        frame.size.height = Layout.windowHeight
+        frame.origin.x = center.x - frame.width / 2
+        frame.origin.y = center.y - frame.height / 2
+        window.setFrame(frame, display: true, animate: false)
+        window.contentView?.layoutSubtreeIfNeeded()
+    }
+
+    private func promptForBrowserRename(_ browser: Browser) {
+        guard let window else {
+            return
+        }
+
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Rename Browser"
+        alert.informativeText = "Set a custom name for \(browser.displayName). Leave it empty to use the original name."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        textField.stringValue = preferences.customBrowserDisplayName(for: browser.bundleIdentifier) ?? browser.shortDisplayName
+        textField.placeholderString = browser.shortDisplayName
+        alert.accessoryView = textField
+
+        alert.beginSheetModal(for: window) { [weak self, weak textField] response in
+            guard response == .alertFirstButtonReturn,
+                  let customDisplayName = textField?.stringValue
+            else {
+                return
+            }
+
+            self?.preferences.setCustomBrowserDisplayName(
+                bundleIdentifier: browser.bundleIdentifier,
+                displayName: customDisplayName
+            )
+            self?.updateBrowserDisplayName(bundleIdentifier: browser.bundleIdentifier)
+        }
     }
 
     private static func windowMetrics(forBrowserCount browserCount: Int) -> (windowWidth: CGFloat, tileWidth: CGFloat) {
@@ -506,8 +609,8 @@ private final class OutsidePanelClickMonitor {
 
 private final class GrayscalePanelBackgroundView: NSView {
     private enum Palette {
-        static let darkBackground = NSColor(calibratedWhite: 0.20, alpha: 0.70)
-        static let lightBackground = NSColor(calibratedWhite: 0.88, alpha: 0.70)
+        static let darkBackground = NSColor(calibratedWhite: 0.20, alpha: 0.88)
+        static let lightBackground = NSColor(calibratedWhite: 0.88, alpha: 0.88)
         static let darkBorder = NSColor(calibratedWhite: 1.00, alpha: 0.16)
         static let lightBorder = NSColor(calibratedWhite: 0.00, alpha: 0.18)
     }
@@ -515,7 +618,7 @@ private final class GrayscalePanelBackgroundView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.cornerRadius = 15
+        layer?.cornerRadius = 22
         layer?.masksToBounds = true
         layer?.borderWidth = 1
         updateColors()

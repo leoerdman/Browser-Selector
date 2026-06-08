@@ -9,6 +9,7 @@ final class Preferences {
         case lastBrowserBundleIdentifier
         case rememberDefaultPolicyVersion
         case hiddenBrowserBundleIdentifiers
+        case customBrowserDisplayNames
     }
 
     private let userDefaults: UserDefaults
@@ -87,6 +88,23 @@ final class Preferences {
         setHiddenBrowserBundleIdentifiers(hiddenBundleIdentifiers)
     }
 
+    func customBrowserDisplayName(for bundleIdentifier: String) -> String? {
+        customBrowserDisplayNames[bundleIdentifier]
+    }
+
+    func setCustomBrowserDisplayName(bundleIdentifier: String, displayName: String?) {
+        var customDisplayNames = customBrowserDisplayNames
+        let normalizedDisplayName = Self.normalizedCustomDisplayName(displayName)
+
+        if let normalizedDisplayName {
+            customDisplayNames[bundleIdentifier] = normalizedDisplayName
+        } else {
+            customDisplayNames.removeValue(forKey: bundleIdentifier)
+        }
+
+        setCustomBrowserDisplayNames(customDisplayNames)
+    }
+
     func resetRememberedBrowserChoice() {
         let changed = rememberLastBrowser || lastBrowserBundleIdentifier != nil
         userDefaults.set(false, forKey: Key.rememberLastBrowser.rawValue)
@@ -157,6 +175,60 @@ final class Preferences {
             userDefaults.set(sortedBundleIdentifiers, forKey: Key.hiddenBrowserBundleIdentifiers.rawValue)
         }
         notifyChanged()
+    }
+
+    private var customBrowserDisplayNames: [String: String] {
+        guard let dictionary = userDefaults.dictionary(forKey: Key.customBrowserDisplayNames.rawValue) as? [String: String] else {
+            return [:]
+        }
+
+        return dictionary.filter { bundleIdentifier, displayName in
+            Self.normalizedCustomDisplayName(displayName) != nil
+                && !bundleIdentifier.isEmpty
+                && bundleIdentifier.rangeOfCharacter(from: CharacterSet(charactersIn: "\t\r\n")) == nil
+        }
+    }
+
+    private func setCustomBrowserDisplayNames(_ displayNames: [String: String]) {
+        let normalizedDisplayNames = displayNames.reduce(into: [String: String]()) { result, element in
+            guard !element.key.isEmpty,
+                  element.key.rangeOfCharacter(from: CharacterSet(charactersIn: "\t\r\n")) == nil,
+                  let displayName = Self.normalizedCustomDisplayName(element.value)
+            else {
+                return
+            }
+
+            result[element.key] = displayName
+        }
+
+        guard normalizedDisplayNames != customBrowserDisplayNames else {
+            return
+        }
+
+        if normalizedDisplayNames.isEmpty {
+            userDefaults.removeObject(forKey: Key.customBrowserDisplayNames.rawValue)
+        } else {
+            userDefaults.set(normalizedDisplayNames, forKey: Key.customBrowserDisplayNames.rawValue)
+        }
+        notifyChanged()
+    }
+
+    private static func normalizedCustomDisplayName(_ displayName: String?) -> String? {
+        guard let displayName else {
+            return nil
+        }
+
+        let normalizedDisplayName = displayName
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !normalizedDisplayName.isEmpty else {
+            return nil
+        }
+
+        return String(normalizedDisplayName.prefix(64))
     }
 
     private func notifyChanged() {

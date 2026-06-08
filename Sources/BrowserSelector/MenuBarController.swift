@@ -206,7 +206,7 @@ final class MenuBarController: NSObject {
 
         for browser in browsers {
             let item = NSMenuItem(
-                title: browser.shortDisplayName,
+                title: browser.displayName(preferences: preferences),
                 action: #selector(toggleBrowserVisibility(_:)),
                 keyEquivalent: ""
             )
@@ -232,7 +232,7 @@ final class MenuBarController: NSObject {
 
         let browserName = browsers
             .first { $0.bundleIdentifier == bundleIdentifier }?
-            .shortDisplayName
+            .displayName(preferences: preferences)
 
         return "Браузер по умолчанию: \(browserName ?? bundleIdentifier)"
     }

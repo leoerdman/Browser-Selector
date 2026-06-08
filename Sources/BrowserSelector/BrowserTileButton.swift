@@ -24,10 +24,11 @@ final class BrowserTileButton: NSControl {
     private var isHovering = false
     private var isPressed = false
 
-    init(browser: Browser) {
+    init(browser: Browser, displayName: String? = nil) {
         self.browser = browser
         super.init(frame: .zero)
         setup()
+        updateDisplayName(displayName ?? browser.shortDisplayName)
     }
 
     @available(*, unavailable)
@@ -103,16 +104,12 @@ final class BrowserTileButton: NSControl {
         wantsLayer = true
         layer?.cornerRadius = 10
         layer?.masksToBounds = true
-        toolTip = browser.displayName
         setAccessibilityRole(.button)
-        setAccessibilityLabel("Open in \(browser.displayName)")
-        setAccessibilityHelp("Opens the current link in \(browser.displayName).")
 
         iconView.image = browser.icon
         iconView.imageScaling = .scaleProportionallyUpOrDown
         iconView.translatesAutoresizingMaskIntoConstraints = false
 
-        nameLabel.stringValue = browser.shortDisplayName
         nameLabel.font = .systemFont(ofSize: 12, weight: .medium)
         nameLabel.alignment = .center
         nameLabel.maximumNumberOfLines = 2
@@ -134,6 +131,13 @@ final class BrowserTileButton: NSControl {
         ])
 
         updateAppearance()
+    }
+
+    func updateDisplayName(_ displayName: String) {
+        nameLabel.stringValue = displayName
+        toolTip = displayName == browser.displayName ? displayName : "\(displayName) (\(browser.displayName))"
+        setAccessibilityLabel("Open in \(displayName)")
+        setAccessibilityHelp("Opens the current link in \(displayName).")
     }
 
     private func updateAppearance() {

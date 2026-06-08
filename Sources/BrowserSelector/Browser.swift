@@ -27,4 +27,8 @@ struct Browser: Identifiable {
             return displayName
         }
     }
+
+    func displayName(preferences: Preferences) -> String {
+        preferences.customBrowserDisplayName(for: bundleIdentifier) ?? shortDisplayName
+    }
 }

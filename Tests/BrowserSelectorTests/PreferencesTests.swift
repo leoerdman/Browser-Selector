@@ -116,6 +116,30 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(preferences.hiddenBrowserBundleIdentifiers, Set(["org.mozilla.firefox"]))
     }
 
+    func testCustomBrowserDisplayNamePersistsAndNormalizesWhitespace() {
+        let preferences = makePreferences()
+        let browser = Browser(
+            bundleIdentifier: "com.google.Chrome",
+            displayName: "Google Chrome",
+            bundleURL: URL(fileURLWithPath: "/Applications/Google Chrome.app"),
+            icon: NSImage(size: NSSize(width: 36, height: 36))
+        )
+
+        XCTAssertEqual(browser.displayName(preferences: preferences), "Chrome")
+
+        preferences.setCustomBrowserDisplayName(
+            bundleIdentifier: "com.google.Chrome",
+            displayName: "  Work\nChrome  "
+        )
+
+        XCTAssertEqual(preferences.customBrowserDisplayName(for: "com.google.Chrome"), "Work Chrome")
+        XCTAssertEqual(browser.displayName(preferences: preferences), "Work Chrome")
+
+        preferences.setCustomBrowserDisplayName(bundleIdentifier: "com.google.Chrome", displayName: "   ")
+        XCTAssertNil(preferences.customBrowserDisplayName(for: "com.google.Chrome"))
+        XCTAssertEqual(browser.displayName(preferences: preferences), "Chrome")
+    }
+
     private func makePreferences() -> Preferences {
         Preferences(userDefaults: UserDefaults(suiteName: UUID().uuidString)!)
     }
