@@ -104,6 +104,30 @@ final class PreferencesTests: XCTestCase {
         XCTAssertNil(preferences.lastBrowserBundleIdentifier)
     }
 
+    func testHidingAlreadyHiddenRememberedBrowserStillEmitsPreferenceChange() {
+        let preferences = makePreferences()
+        preferences.setBrowserVisibility(bundleIdentifier: "com.google.Chrome", isVisible: false)
+        preferences.rememberLastBrowser = true
+        preferences.lastBrowserBundleIdentifier = "com.google.Chrome"
+
+        var notificationCount = 0
+        let token = NotificationCenter.default.addObserver(
+            forName: .browserSelectorPreferencesDidChange,
+            object: preferences,
+            queue: nil
+        ) { _ in
+            notificationCount += 1
+        }
+        defer {
+            NotificationCenter.default.removeObserver(token)
+        }
+
+        preferences.setBrowserVisibility(bundleIdentifier: "com.google.Chrome", isVisible: false)
+
+        XCTAssertNil(preferences.lastBrowserBundleIdentifier)
+        XCTAssertEqual(notificationCount, 1)
+    }
+
     func testReconcileRememberedBrowserRemovesHiddenBrowsersThatAreNoLongerInstalled() {
         let preferences = makePreferences()
         preferences.setBrowserVisibility(bundleIdentifier: "com.google.Chrome", isVisible: false)
@@ -138,6 +162,31 @@ final class PreferencesTests: XCTestCase {
         preferences.setCustomBrowserDisplayName(bundleIdentifier: "com.google.Chrome", displayName: "   ")
         XCTAssertNil(preferences.customBrowserDisplayName(for: "com.google.Chrome"))
         XCTAssertEqual(browser.displayName(preferences: preferences), "Chrome")
+    }
+
+    func testCustomBrowserDisplayNameNormalizesRawStoredDictionaryValues() {
+        let suiteName = UUID().uuidString
+        let userDefaults = UserDefaults(suiteName: suiteName)!
+        userDefaults.set(
+            ["com.google.Chrome": "  Work\nChrome  "],
+            forKey: "customBrowserDisplayNames"
+        )
+        let preferences = Preferences(userDefaults: userDefaults)
+
+        XCTAssertEqual(preferences.customBrowserDisplayName(for: "com.google.Chrome"), "Work Chrome")
+    }
+
+    func testReconcileRememberedBrowserRemovesCustomNamesForBrowsersThatAreNoLongerInstalled() {
+        let preferences = makePreferences()
+        preferences.setCustomBrowserDisplayName(bundleIdentifier: "com.google.Chrome", displayName: "Work")
+        preferences.setCustomBrowserDisplayName(bundleIdentifier: "org.mozilla.firefox", displayName: "Fox")
+
+        preferences.reconcileRememberedBrowser(
+            availableBundleIdentifiers: ["org.mozilla.firefox"]
+        )
+
+        XCTAssertNil(preferences.customBrowserDisplayName(for: "com.google.Chrome"))
+        XCTAssertEqual(preferences.customBrowserDisplayName(for: "org.mozilla.firefox"), "Fox")
     }
 
     private func makePreferences() -> Preferences {

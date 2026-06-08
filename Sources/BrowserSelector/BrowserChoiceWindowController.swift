@@ -244,7 +244,7 @@ final class BrowserChoiceWindowController: NSWindowController {
     private func makeResetMenu() -> NSMenu {
         let menu = NSMenu()
         let resetItem = NSMenuItem(
-            title: "Reset remembered choice",
+            title: "Сбросить запомненный браузер",
             action: #selector(resetRememberedChoice),
             keyEquivalent: ""
         )
@@ -278,7 +278,7 @@ final class BrowserChoiceWindowController: NSWindowController {
         menu.addItem(.separator())
 
         let resetItem = NSMenuItem(
-            title: "Reset remembered choice",
+            title: "Сбросить запомненный браузер",
             action: #selector(resetRememberedChoice),
             keyEquivalent: ""
         )

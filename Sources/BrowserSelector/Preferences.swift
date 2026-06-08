@@ -74,18 +74,25 @@ final class Preferences {
     }
 
     func setBrowserVisibility(bundleIdentifier: String, isVisible: Bool) {
-        var hiddenBundleIdentifiers = hiddenBrowserBundleIdentifiers
+        let previousHiddenBundleIdentifiers = hiddenBrowserBundleIdentifiers
+        var hiddenBundleIdentifiers = previousHiddenBundleIdentifiers
+        let shouldClearRememberedBrowser = !isVisible && lastBrowserBundleIdentifier == bundleIdentifier
 
         if isVisible {
             hiddenBundleIdentifiers.remove(bundleIdentifier)
         } else {
             hiddenBundleIdentifiers.insert(bundleIdentifier)
-            if lastBrowserBundleIdentifier == bundleIdentifier {
-                userDefaults.removeObject(forKey: Key.lastBrowserBundleIdentifier.rawValue)
-            }
+        }
+
+        if shouldClearRememberedBrowser {
+            userDefaults.removeObject(forKey: Key.lastBrowserBundleIdentifier.rawValue)
         }
 
         setHiddenBrowserBundleIdentifiers(hiddenBundleIdentifiers)
+
+        if shouldClearRememberedBrowser && hiddenBundleIdentifiers == previousHiddenBundleIdentifiers {
+            notifyChanged()
+        }
     }
 
     func customBrowserDisplayName(for bundleIdentifier: String) -> String? {
@@ -128,6 +135,7 @@ final class Preferences {
 
     func reconcileRememberedBrowser(availableBundleIdentifiers: Set<String>) {
         reconcileHiddenBrowsers(availableBundleIdentifiers: availableBundleIdentifiers)
+        reconcileCustomBrowserDisplayNames(availableBundleIdentifiers: availableBundleIdentifiers)
 
         guard rememberLastBrowser else {
             guard lastBrowserBundleIdentifier != nil else {
@@ -182,11 +190,27 @@ final class Preferences {
             return [:]
         }
 
-        return dictionary.filter { bundleIdentifier, displayName in
-            Self.normalizedCustomDisplayName(displayName) != nil
-                && !bundleIdentifier.isEmpty
-                && bundleIdentifier.rangeOfCharacter(from: CharacterSet(charactersIn: "\t\r\n")) == nil
+        return dictionary.reduce(into: [String: String]()) { result, element in
+            guard !element.key.isEmpty,
+                  element.key.rangeOfCharacter(from: CharacterSet(charactersIn: "\t\r\n")) == nil,
+                  let displayName = Self.normalizedCustomDisplayName(element.value)
+            else {
+                return
+            }
+
+            result[element.key] = displayName
         }
+    }
+
+    private func reconcileCustomBrowserDisplayNames(availableBundleIdentifiers: Set<String>) {
+        let displayNames = customBrowserDisplayNames
+        let reconciledDisplayNames = displayNames.filter { availableBundleIdentifiers.contains($0.key) }
+
+        guard reconciledDisplayNames != displayNames else {
+            return
+        }
+
+        setCustomBrowserDisplayNames(reconciledDisplayNames)
     }
 
     private func setCustomBrowserDisplayNames(_ displayNames: [String: String]) {
