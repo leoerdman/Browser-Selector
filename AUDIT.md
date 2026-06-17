@@ -4,7 +4,7 @@
 
 Область: файлы проекта в репозитории, без `.git`, `.build`, `dist`, generated iconset и сторонних зависимостей.
 
-Итог: найдено 38 реальных дефектов из кода. P0 не найдено. Найденные P1 исправлены полностью. P2/P3/UX/SSOT дефекты из списка ниже тоже исправлены.
+Итог: найдено 46 реальных дефектов из кода. P0 не найдено. Найденные P1 исправлены полностью. P2/P3/UX/SSOT дефекты из списка ниже тоже исправлены.
 
 ## 1. P1 - release installer убивал процессы только по имени
 
@@ -1020,6 +1020,236 @@ REPO="${BROWSER_SELECTOR_REPO:-UltraDeepAutomation/Browser-Selector}"
 ```
 
 Объяснение: public install docs и installer default теперь используют canonical GitHub location без redirect.
+
+## 39. P1 - Zen Browser ошибочно считался Chromium-браузером
+
+Файл и строка: `Sources/BrowserSelector/BrowserClassifier.swift:70`.
+
+Суть: `isChromiumLike` выводил Chromium model из общего exact browser list и относил Firefox-based Zen к Chromium.
+
+Последствие: для Zen генерировался Chrome-style AppleScript с `tabs`, что могло ломать открытие ссылок.
+
+Было:
+
+```swift
+let exactChromiumBrowser = exactBrowserBundleIdentifiers.contains(bundleIdentifier)
+    && !bundleIdentifier.hasPrefix("com.apple.Safari")
+    && !bundleIdentifier.hasPrefix("org.mozilla.")
+    && bundleIdentifier != "com.duckduckgo.macos.browser"
+```
+
+Стало:
+
+```swift
+private static let chromiumBundleIdentifiers: Set<String> = [
+    "com.google.Chrome",
+    "com.brave.Browser",
+    "company.thebrowser.Browser"
+]
+
+static func isChromiumLike(bundleIdentifier: String) -> Bool {
+    chromiumBundleIdentifiers.contains(bundleIdentifier)
+        || chromiumBundlePrefixes.contains { bundleIdentifier.hasPrefix($0) }
+}
+```
+
+Объяснение: Chromium automation теперь включается только для явно Chromium-family браузеров.
+
+## 40. P2 - Chrome-style script создавал лишнюю пустую вкладку при нуле окон
+
+Файл и строка: `Sources/BrowserSelector/BrowserLaunchScriptFactory.swift:11`.
+
+Суть: script делал `make new window`, а затем всегда создавал новую вкладку во front window.
+
+Последствие: когда Chrome/Brave/Arc были закрыты, пользователь получал окно с лишней blank tab.
+
+Было:
+
+```swift
+if (count of windows) = 0 then make new window
+tell front window
+    set newTab to make new tab at end of tabs with properties {URL:\(targetURL)}
+end tell
+```
+
+Стало:
+
+```swift
+if (count of windows) = 0 then
+    set newWindow to make new window
+    set URL of active tab of newWindow to \(targetURL)
+else
+    tell front window
+        set newTab to make new tab at end of tabs with properties {URL:\(targetURL)}
+    end tell
+end if
+```
+
+Объяснение: новое окно теперь использует свою стартовую вкладку, а новая вкладка создается только в уже существующем окне.
+
+## 41. P1 - shell scripts всё ещё частично доверяли пользовательскому `PATH`
+
+Файл и строка: `Scripts/install_latest.sh:2`, `Scripts/build.sh:2`, `Scripts/package_release.sh:2`.
+
+Суть: после hardening критичных команд scripts всё ещё вызывали `rm`, `mv`, `mkdir`, `mktemp`, `sleep`, `security`, `awk`, `swift`, `codesign` через пользовательский `PATH`.
+
+Последствие: подмененный PATH мог сделать install/build/release недетерминированным.
+
+Было:
+
+```bash
+set -euo pipefail
+TMP_DIR="$(mktemp -d)"
+rm -rf "${TMP_DIR}"
+```
+
+Стало:
+
+```bash
+set -euo pipefail
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+TMP_DIR="$(mktemp -d)"
+rm -rf "${TMP_DIR}"
+```
+
+Объяснение: все shell scripts теперь стартуют с системным PATH, а explicit command variables продолжают указывать на конкретные macOS tools.
+
+## 42. P1 - installer принимал краткий process flash за успешный launch
+
+Файл и строка: `Scripts/install_latest.sh:211`, `Scripts/install.sh:117`.
+
+Суть: launch check возвращал success при первом обнаружении процесса.
+
+Последствие: app мог стартовать и сразу умереть, но installer уже сообщал `Installed`.
+
+Было:
+
+```bash
+for _ in {1..30}; do
+    is_target_app_running && return 0
+    sleep 0.1
+done
+```
+
+Стало:
+
+```bash
+wait_for_target_app_to_stay_running() {
+    for _ in $(seq 1 "${initial_attempts}"); do
+        if is_target_app_running; then
+            for _ in $(seq 1 "${stable_attempts}"); do
+                sleep 0.1
+                is_target_app_running || return 1
+            done
+            return 0
+        fi
+        sleep 0.1
+    done
+    return 1
+}
+```
+
+Объяснение: installer теперь требует устойчивого running state, а не одного моментального PID.
+
+## 43. P2/SSOT - browser classifier держал Chromium ids в двух источниках
+
+Файл и строка: `Sources/BrowserSelector/BrowserClassifier.swift:7`.
+
+Суть: один и тот же Chromium bundle id нужно было добавлять и в общий exact list, и в Chromium classifier.
+
+Последствие: новые браузеры легко попадали в список обнаружения, но получали неправильную automation strategy.
+
+Было:
+
+```swift
+private static let exactBrowserBundleIdentifiers: Set<String> = [
+    "com.google.Chrome",
+    "app.zen-browser.zen"
+]
+```
+
+Стало:
+
+```swift
+private static let exactNonChromiumBrowserBundleIdentifiers: Set<String> = [
+    "app.zen-browser.zen"
+]
+
+private static let exactBrowserBundleIdentifiers =
+    exactNonChromiumBrowserBundleIdentifiers.union(chromiumBundleIdentifiers)
+```
+
+Объяснение: Chromium list теперь единственный источник правды для Chromium automation и часть общего exact browser detection.
+
+## 44. UX - menu называл запомненный выбор “браузером по умолчанию”
+
+Файл и строка: `Sources/BrowserSelector/MenuBarController.swift:252`, `README.md:113`.
+
+Суть: remembered choice отображался как `Браузер по умолчанию`, что конфликтовало с macOS default browser meaning.
+
+Последствие: пользователь мог решить, что этот пункт меняет системный default browser.
+
+Было:
+
+```swift
+return "Браузер по умолчанию: \(browserName ?? bundleIdentifier)"
+```
+
+Стало:
+
+```swift
+return "Запомненный браузер: \(browserName ?? bundleIdentifier)"
+```
+
+Объяснение: UI теперь разделяет системное назначение default handler и локальную память последнего выбора.
+
+## 45. UX - LaunchServices error называл content type схемой
+
+Файл и строка: `Sources/BrowserSelector/DefaultBrowserRegistrationService.swift:13`.
+
+Суть: одна ошибка использовалась и для URL schemes, и для `public.html`, но текст всегда говорил `для схемы`.
+
+Последствие: диагностика регистрации `public.html` была неточной.
+
+Было:
+
+```swift
+case launchServicesFailure(scheme: String, status: OSStatus)
+return "LaunchServices вернул ошибку \(status) для схемы \(scheme)."
+```
+
+Стало:
+
+```swift
+case launchServicesFailure(handler: String, status: OSStatus)
+return "LaunchServices вернул ошибку \(status) для обработчика \(handler)."
+```
+
+Объяснение: один текст теперь корректно покрывает и URL schemes, и content type handlers.
+
+## 46. P1/SSOT - публичный latest release отстал бы от новых фиксов
+
+Файл и строка: `Resources/Info.plist:60`, `README.md:35`.
+
+Суть: после runtime/install fixes bundle metadata и documented tag нужно поднять с `1.0.2` до `1.0.3`.
+
+Последствие: one-command install через latest GitHub Release продолжил бы ставить сборку без последних исправлений.
+
+Было:
+
+```xml
+<string>1.0.2</string>
+<string>3</string>
+```
+
+Стало:
+
+```xml
+<string>1.0.3</string>
+<string>4</string>
+```
+
+Объяснение: app metadata, README, tag и release artifact снова будут указывать на один проверенный build.
 
 ## Verification
 

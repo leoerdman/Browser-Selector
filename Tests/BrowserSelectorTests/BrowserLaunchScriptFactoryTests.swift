@@ -39,9 +39,12 @@ final class BrowserLaunchScriptFactoryTests: XCTestCase {
         )
 
         XCTAssertTrue(script.contains("tell application id \"com.google.Chrome\""))
-        XCTAssertTrue(script.contains("if (count of windows) = 0 then make new window"))
+        XCTAssertTrue(script.contains("if (count of windows) = 0 then"))
+        XCTAssertTrue(script.contains("set newWindow to make new window"))
+        XCTAssertTrue(script.contains("set URL of active tab of newWindow to \"https://example.com/path?x=1#fragment\""))
         XCTAssertTrue(script.contains("tell front window"))
         XCTAssertTrue(script.contains("make new tab at end of tabs"))
+        XCTAssertTrue(script.contains("else"))
         XCTAssertTrue(script.contains("set active tab index to (count of tabs)"))
         XCTAssertTrue(script.contains(#"URL:"https://example.com/path?x=1#fragment""#))
     }

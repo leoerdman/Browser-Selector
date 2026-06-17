@@ -9,14 +9,14 @@ enum DefaultBrowserRegistrationState {
 
 enum DefaultBrowserRegistrationError: LocalizedError {
     case missingBundleIdentifier
-    case launchServicesFailure(scheme: String, status: OSStatus)
+    case launchServicesFailure(handler: String, status: OSStatus)
 
     var errorDescription: String? {
         switch self {
         case .missingBundleIdentifier:
             return "В bundle приложения не найден CFBundleIdentifier."
-        case let .launchServicesFailure(scheme, status):
-            return "LaunchServices вернул ошибку \(status) для схемы \(scheme)."
+        case let .launchServicesFailure(handler, status):
+            return "LaunchServices вернул ошибку \(status) для обработчика \(handler)."
         }
     }
 }
@@ -67,7 +67,7 @@ final class DefaultBrowserRegistrationService {
 
             guard status == noErr else {
                 throw DefaultBrowserRegistrationError.launchServicesFailure(
-                    scheme: scheme,
+                    handler: scheme,
                     status: status
                 )
             }
@@ -90,7 +90,7 @@ final class DefaultBrowserRegistrationService {
 
             guard status == noErr else {
                 throw DefaultBrowserRegistrationError.launchServicesFailure(
-                    scheme: contentType,
+                    handler: contentType,
                     status: status
                 )
             }

@@ -249,18 +249,18 @@ final class MenuBarController: NSObject {
 
     private func rememberedBrowserTitle(in browsers: [Browser]) -> String {
         guard preferences.rememberLastBrowser else {
-            return "Браузер по умолчанию: не запоминать"
+            return "Запомненный браузер: не выбран"
         }
 
         guard let bundleIdentifier = preferences.lastBrowserBundleIdentifier else {
-            return "Браузер по умолчанию: будет выбран после клика"
+            return "Запомненный браузер: будет выбран после клика"
         }
 
         let browserName = browsers
             .first { $0.bundleIdentifier == bundleIdentifier }?
             .displayName(preferences: preferences)
 
-        return "Браузер по умолчанию: \(browserName ?? bundleIdentifier)"
+        return "Запомненный браузер: \(browserName ?? bundleIdentifier)"
     }
 
     private static func browserCountTitle(_ count: Int) -> String {

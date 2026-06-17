@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 
 REPO="${BROWSER_SELECTOR_REPO:-UltraDeepAutomation/Browser-Selector}"
 VERSION="${BROWSER_SELECTOR_VERSION:-latest}"
@@ -151,6 +152,24 @@ is_target_app_running() {
     [[ -n "$(running_target_pids)" ]]
 }
 
+wait_for_target_app_to_stay_running() {
+    local initial_attempts="${1:-50}"
+    local stable_attempts="${2:-20}"
+
+    for _ in $(seq 1 "${initial_attempts}"); do
+        if is_target_app_running; then
+            for _ in $(seq 1 "${stable_attempts}"); do
+                sleep 0.1
+                is_target_app_running || return 1
+            done
+            return 0
+        fi
+        sleep 0.1
+    done
+
+    return 1
+}
+
 terminate_target_app() {
     local pid
     local pids
@@ -210,16 +229,10 @@ fi
 
 launch_installed_app() {
     "${OPEN}" -n "${TARGET_APP}"
-    for _ in {1..30}; do
-        is_target_app_running && return 0
-        sleep 0.1
-    done
+    wait_for_target_app_to_stay_running 50 20 && return 0
 
     "${TARGET_APP}/Contents/MacOS/${BUNDLE_EXECUTABLE}" >/dev/null 2>&1 &
-    for _ in {1..30}; do
-        is_target_app_running && return 0
-        sleep 0.1
-    done
+    wait_for_target_app_to_stay_running 50 20 && return 0
 
     return 1
 }

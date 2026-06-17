@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 
 if [[ -n "${CODE_SIGN_IDENTITY:-}" ]]; then
     printf '%s\n' "${CODE_SIGN_IDENTITY}"

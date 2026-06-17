@@ -9,11 +9,15 @@ enum BrowserLaunchScriptFactory {
         using terms from application id \(browserID)
         tell application id \(browserID)
             activate
-            if (count of windows) = 0 then make new window
-            tell front window
-                set newTab to make new tab at end of tabs with properties {URL:\(targetURL)}
-                set active tab index to (count of tabs)
-            end tell
+            if (count of windows) = 0 then
+                set newWindow to make new window
+                set URL of active tab of newWindow to \(targetURL)
+            else
+                tell front window
+                    set newTab to make new tab at end of tabs with properties {URL:\(targetURL)}
+                    set active tab index to (count of tabs)
+                end tell
+            end if
         end tell
         end using terms from
         """

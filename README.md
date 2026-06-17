@@ -32,7 +32,7 @@
 Для установки конкретной версии:
 
 ```bash
-BROWSER_SELECTOR_VERSION=v1.0.2 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/UltraDeepAutomation/Browser-Selector/main/Scripts/install_latest.sh)"
+BROWSER_SELECTOR_VERSION=v1.0.3 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/UltraDeepAutomation/Browser-Selector/main/Scripts/install_latest.sh)"
 ```
 
 ## Установка из локального клона
@@ -83,8 +83,8 @@ GitHub Actions автоматически:
 Релиз:
 
 ```bash
-git tag v1.0.2
-git push origin v1.0.2
+git tag v1.0.3
+git push origin v1.0.3
 ```
 
 ## Проверка
@@ -110,7 +110,7 @@ xcrun swiftc Scripts/set_default_browser.swift -o .build/install-tools/set-defau
 - Пункт `Проверить окно выбора` открывает тестовый chooser без необходимости искать ссылку в другом приложении.
 - Пункт `Проверить системную ссылку` открывает `https` через macOS LaunchServices, чтобы проверить реальный default-handler path.
 - Пункт `Показать диагностику` показывает текущий bundle, handlers, путь к diagnostics log и последние строки лога.
-- В menu bar есть `Запоминать выбранный браузер`. Если включить его, следующий выбранный браузер станет строкой `Браузер по умолчанию: X`.
+- В menu bar есть `Запоминать выбранный браузер`. Если включить его, следующий выбранный браузер станет строкой `Запомненный браузер: X`.
 - В menu bar есть список найденных браузеров с галочками: отмеченные показываются в chooser, снятые скрываются.
 - В chooser можно нажать правой кнопкой по браузеру и выбрать `Скрыть`, чтобы скрыть его из текущего и будущих окон выбора.
 - В том же контекстном меню есть `Переименовать`: пользовательское имя сохраняется локально и показывается в chooser и menu bar.

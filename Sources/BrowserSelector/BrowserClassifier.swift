@@ -5,30 +5,11 @@ enum BrowserClassifier {
         "com.hegenberg.BetterTouchTool"
     ]
 
-    private static let exactBrowserBundleIdentifiers: Set<String> = [
-        "ai.perplexity.comet",
+    private static let exactNonChromiumBrowserBundleIdentifiers: Set<String> = [
         "app.zen-browser.zen",
         "com.apple.Safari",
         "com.apple.SafariTechnologyPreview",
-        "com.brave.Browser",
-        "com.brave.Browser.beta",
-        "com.brave.Browser.nightly",
         "com.duckduckgo.macos.browser",
-        "com.google.Chrome",
-        "com.google.Chrome.beta",
-        "com.google.Chrome.canary",
-        "com.google.Chrome.dev",
-        "com.google.chrome.for.testing",
-        "com.microsoft.edgemac",
-        "com.microsoft.edgemac.Beta",
-        "com.microsoft.edgemac.Canary",
-        "com.microsoft.edgemac.Dev",
-        "com.operasoftware.Opera",
-        "com.operasoftware.OperaGX",
-        "com.vivaldi.Vivaldi",
-        "com.vivaldi.Vivaldi.snapshot",
-        "company.thebrowser.Browser",
-        "org.chromium.Chromium",
         "org.mozilla.firefox",
         "org.mozilla.firefoxdeveloperedition",
         "org.mozilla.nightly"
@@ -57,6 +38,39 @@ enum BrowserClassifier {
         "zen"
     ]
 
+    private static let chromiumBundleIdentifiers: Set<String> = [
+        "ai.perplexity.comet",
+        "com.brave.Browser",
+        "com.brave.Browser.beta",
+        "com.brave.Browser.nightly",
+        "com.google.Chrome",
+        "com.google.Chrome.beta",
+        "com.google.Chrome.canary",
+        "com.google.Chrome.dev",
+        "com.google.chrome.for.testing",
+        "com.microsoft.edgemac",
+        "com.microsoft.edgemac.Beta",
+        "com.microsoft.edgemac.Canary",
+        "com.microsoft.edgemac.Dev",
+        "com.operasoftware.Opera",
+        "com.operasoftware.OperaGX",
+        "com.vivaldi.Vivaldi",
+        "com.vivaldi.Vivaldi.snapshot",
+        "company.thebrowser.Browser",
+        "org.chromium.Chromium"
+    ]
+
+    private static let chromiumBundlePrefixes = [
+        "com.brave.Browser",
+        "com.google.Chrome",
+        "com.microsoft.edgemac",
+        "com.vivaldi.Vivaldi",
+        "company.thebrowser."
+    ]
+
+    private static let exactBrowserBundleIdentifiers =
+        exactNonChromiumBrowserBundleIdentifiers.union(chromiumBundleIdentifiers)
+
     static func isBrowser(bundleIdentifier: String, displayName: String) -> Bool {
         guard !deniedBundleIdentifiers.contains(bundleIdentifier) else {
             return false
@@ -81,19 +95,7 @@ enum BrowserClassifier {
     }
 
     static func isChromiumLike(bundleIdentifier: String) -> Bool {
-        let exactChromiumBrowser = exactBrowserBundleIdentifiers.contains(bundleIdentifier)
-            && !bundleIdentifier.hasPrefix("com.apple.Safari")
-            && !bundleIdentifier.hasPrefix("org.mozilla.")
-            && bundleIdentifier != "com.duckduckgo.macos.browser"
-
-        return exactChromiumBrowser
-            || bundleIdentifier.hasPrefix("com.google.Chrome")
-            || bundleIdentifier == "com.google.chrome.for.testing"
-            || bundleIdentifier.hasPrefix("com.microsoft.edgemac")
-            || bundleIdentifier.hasPrefix("com.brave.Browser")
-            || bundleIdentifier.hasPrefix("com.vivaldi.Vivaldi")
-            || bundleIdentifier.hasPrefix("company.thebrowser.")
-            || bundleIdentifier == "ai.perplexity.comet"
-            || bundleIdentifier == "org.chromium.Chromium"
+        chromiumBundleIdentifiers.contains(bundleIdentifier)
+            || chromiumBundlePrefixes.contains { bundleIdentifier.hasPrefix($0) }
     }
 }
