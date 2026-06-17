@@ -32,7 +32,7 @@
 Для установки конкретной версии:
 
 ```bash
-BROWSER_SELECTOR_VERSION=v1.0.0 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/UltraDeepAutomation/browser-selector/main/Scripts/install_latest.sh)"
+BROWSER_SELECTOR_VERSION=v1.0.1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/UltraDeepAutomation/browser-selector/main/Scripts/install_latest.sh)"
 ```
 
 ## Установка из локального клона
@@ -83,8 +83,8 @@ GitHub Actions автоматически:
 Релиз:
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.0.1
+git push origin v1.0.1
 ```
 
 ## Проверка
