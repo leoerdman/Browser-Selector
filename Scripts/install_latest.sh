@@ -126,6 +126,10 @@ ditto "${SOURCE_APP}" "${TARGET_APP}"
 
 INSTALLED_INFO_PLIST="${TARGET_APP}/Contents/Info.plist"
 
+if command -v xattr >/dev/null 2>&1; then
+    xattr -dr com.apple.quarantine "${TARGET_APP}" >/dev/null 2>&1 || true
+fi
+
 if [[ -x "${LSREGISTER}" ]]; then
     "${LSREGISTER}" -f "${TARGET_APP}" >/dev/null
 fi
