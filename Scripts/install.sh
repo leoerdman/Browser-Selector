@@ -5,7 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INFO_PLIST="${ROOT_DIR}/Resources/Info.plist"
 APP_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "${INFO_PLIST}").app"
 SOURCE_APP="${ROOT_DIR}/dist/${APP_NAME}"
-INSTALL_DIR="${HOME}/Applications"
+DEFAULT_INSTALL_DIR="${HOME}/Applications"
+INSTALL_DIR="${DEFAULT_INSTALL_DIR}"
 TARGET_APP="${INSTALL_DIR}/${APP_NAME}"
 INSTALL_STAGING_APP="${INSTALL_DIR}/.${APP_NAME}.installing"
 STAGING_DIR="${ROOT_DIR}/.build/install-stage"
@@ -15,14 +16,15 @@ BUNDLE_EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${I
 TARGET_EXECUTABLE="${TARGET_APP}/Contents/MacOS/${BUNDLE_EXECUTABLE}"
 HELPER_DIR="${ROOT_DIR}/.build/install-tools"
 DEFAULT_BROWSER_HELPER="${HELPER_DIR}/set-default-browser"
+DITTO="/usr/bin/ditto"
+CODESIGN="/usr/bin/codesign"
+OPEN="/usr/bin/open"
+XCRUN="/usr/bin/xcrun"
 
-case "${TARGET_APP}" in
-    "${HOME}/Applications/"*.app) ;;
-    *)
-        echo "Refusing to replace unsafe install target: ${TARGET_APP}" >&2
-        exit 1
-        ;;
-esac
+if [[ "${INSTALL_DIR}" != "${DEFAULT_INSTALL_DIR}" ]]; then
+    echo "Refusing to replace unsafe install target: ${TARGET_APP}" >&2
+    exit 1
+fi
 
 cleanup() {
     if [[ -n "${INSTALL_STAGING_APP:-}" && -d "${INSTALL_STAGING_APP}" ]]; then
@@ -34,23 +36,23 @@ trap cleanup EXIT
 "${ROOT_DIR}/Scripts/build.sh"
 
 mkdir -p "${HELPER_DIR}"
-xcrun swiftc "${ROOT_DIR}/Scripts/set_default_browser.swift" -o "${DEFAULT_BROWSER_HELPER}"
+"${XCRUN}" swiftc "${ROOT_DIR}/Scripts/set_default_browser.swift" -o "${DEFAULT_BROWSER_HELPER}"
 
 mkdir -p "${INSTALL_DIR}" "${STAGING_DIR}"
 rm -rf "${STAGING_APP}"
-ditto "${SOURCE_APP}" "${STAGING_APP}"
-codesign --verify --deep --strict --verbose=2 "${STAGING_APP}" >/dev/null
+"${DITTO}" "${SOURCE_APP}" "${STAGING_APP}"
+"${CODESIGN}" --verify --deep --strict --verbose=2 "${STAGING_APP}" >/dev/null
 
 running_target_pids() {
     local pid
     local command_path
 
-    /usr/bin/pgrep -x "${BUNDLE_EXECUTABLE}" 2>/dev/null | while IFS= read -r pid; do
-        command_path="$(/bin/ps -p "${pid}" -o comm= 2>/dev/null || true)"
-        if [[ "${command_path}" == "${TARGET_EXECUTABLE}" ]]; then
+    while IFS= read -r pid; do
+        command_path="$(/bin/ps -p "${pid}" -o command= 2>/dev/null || true)"
+        if [[ "${command_path}" == "${TARGET_EXECUTABLE}" || "${command_path}" == "${TARGET_EXECUTABLE} "* ]]; then
             printf '%s\n' "${pid}"
         fi
-    done
+    done < <(/usr/bin/pgrep -x "${BUNDLE_EXECUTABLE}" 2>/dev/null || true)
 }
 
 is_target_app_running() {
@@ -95,12 +97,12 @@ if [[ -x "${LSREGISTER}" ]]; then
 fi
 
 rm -rf "${INSTALL_STAGING_APP}"
-ditto "${STAGING_APP}" "${INSTALL_STAGING_APP}"
-codesign --verify --deep --strict --verbose=2 "${INSTALL_STAGING_APP}" >/dev/null
+"${DITTO}" "${STAGING_APP}" "${INSTALL_STAGING_APP}"
+"${CODESIGN}" --verify --deep --strict --verbose=2 "${INSTALL_STAGING_APP}" >/dev/null
 
 rm -rf "${TARGET_APP}"
 mv "${INSTALL_STAGING_APP}" "${TARGET_APP}"
-codesign --verify --deep --strict --verbose=2 "${TARGET_APP}" >/dev/null
+"${CODESIGN}" --verify --deep --strict --verbose=2 "${TARGET_APP}" >/dev/null
 
 INSTALLED_INFO_PLIST="${TARGET_APP}/Contents/Info.plist"
 BUNDLE_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${INSTALLED_INFO_PLIST}")"
@@ -113,7 +115,7 @@ fi
 "${DEFAULT_BROWSER_HELPER}" "${BUNDLE_IDENTIFIER}" "${INSTALLED_INFO_PLIST}"
 
 launch_installed_app() {
-    open -n "${TARGET_APP}"
+    "${OPEN}" -n "${TARGET_APP}"
     for _ in {1..30}; do
         is_target_app_running && return 0
         sleep 0.1

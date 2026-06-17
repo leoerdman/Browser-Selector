@@ -4,7 +4,7 @@
 
 Область: файлы проекта в репозитории, без `.git`, `.build`, `dist`, generated iconset и сторонних зависимостей.
 
-Итог: найдено 28 реальных дефектов из кода. P0 не найдено. Найденные P1 исправлены полностью. P2/P3/UX/SSOT дефекты из списка ниже тоже исправлены.
+Итог: найдено 37 реальных дефектов из кода. P0 не найдено. Найденные P1 исправлены полностью. P2/P3/UX/SSOT дефекты из списка ниже тоже исправлены.
 
 ## 1. P1 - release installer убивал процессы только по имени
 
@@ -710,6 +710,293 @@ setAccessibilityHelp("Открывает текущую ссылку в \(displa
 
 Объяснение: visible UI и accessibility теперь согласованы.
 
+## 29. P1 - release installer пропускал traversal install path
+
+Файл и строка: `Scripts/install_latest.sh:30`.
+
+Суть: raw pattern guard принимал путь вида `~/Applications/../...`.
+
+Последствие: destructive replace мог уйти за пределы ожидаемого `~/Applications/Browser Selector.app`.
+
+Было:
+
+```bash
+case "${TARGET_APP}" in
+    "${HOME}/Applications/"*.app) ;;
+```
+
+Стало:
+
+```bash
+DEFAULT_INSTALL_DIR="$(trim_trailing_slashes "${DEFAULT_INSTALL_DIR}")"
+INSTALL_DIR="$(trim_trailing_slashes "${INSTALL_DIR}")"
+if [[ "${INSTALL_DIR}" != "${DEFAULT_INSTALL_DIR}" ]]; then
+    echo "Refusing to install outside ~/Applications: ${TARGET_APP}" >&2
+    exit 64
+fi
+```
+
+Объяснение: one-command installer теперь устанавливает только в canonical product location и отказывается от traversal/custom path.
+
+## 30. P1 - release installer позволял отключить checksum
+
+Файл и строка: `Scripts/install_latest.sh:66`.
+
+Суть: `BROWSER_SELECTOR_SKIP_CHECKSUM=1` отключал integrity check.
+
+Последствие: сетевой installer мог установить неподтвержденный zip.
+
+Было:
+
+```bash
+if [[ "${BROWSER_SELECTOR_SKIP_CHECKSUM:-0}" == "1" ]]; then
+    echo "Skipping checksum verification because BROWSER_SELECTOR_SKIP_CHECKSUM=1."
+else
+    curl ... "${ASSET_NAME}.sha256"
+fi
+```
+
+Стало:
+
+```bash
+"${CURL}" -fL --retry 3 --retry-delay 1 \
+    "${RELEASE_BASE_URL}/${ASSET_NAME}.sha256" \
+    -o "${CHECKSUM_PATH}"
+"${SHASUM}" -a 256 -c "$(basename "${CHECKSUM_PATH}")"
+```
+
+Объяснение: checksum для public release install теперь обязательный.
+
+## 31. P1 - public installer доверял `PATH` для критичных команд
+
+Файл и строка: `Scripts/install_latest.sh:20`.
+
+Суть: `curl`, `ditto`, `shasum`, `codesign`, `open` вызывались по имени.
+
+Последствие: при подмененном `PATH` installer мог выполнить не системный бинарь.
+
+Было:
+
+```bash
+need_command curl
+curl -fL --retry 3 --retry-delay 1 ...
+codesign --verify --deep --strict ...
+open -n "${TARGET_APP}"
+```
+
+Стало:
+
+```bash
+CURL="/usr/bin/curl"
+CODESIGN="/usr/bin/codesign"
+OPEN="/usr/bin/open"
+need_command "${CURL}"
+"${CURL}" -fL --retry 3 --retry-delay 1 ...
+"${CODESIGN}" --verify --deep --strict ...
+"${OPEN}" -n "${TARGET_APP}"
+```
+
+Объяснение: release install path теперь использует абсолютные macOS system tools.
+
+## 32. P2 - local installer дублировал небезопасные PATH-вызовы
+
+Файл и строка: `Scripts/install.sh:27`.
+
+Суть: локальная установка вызывала `xcrun`, `ditto`, `codesign`, `open` по имени.
+
+Последствие: dev install был менее детерминированным и хуже соответствовал release installer.
+
+Было:
+
+```bash
+xcrun swiftc ...
+ditto "${SOURCE_APP}" "${STAGING_APP}"
+codesign --verify --deep --strict ...
+open -n "${TARGET_APP}"
+```
+
+Стало:
+
+```bash
+XCRUN="/usr/bin/xcrun"
+DITTO="/usr/bin/ditto"
+CODESIGN="/usr/bin/codesign"
+OPEN="/usr/bin/open"
+"${XCRUN}" swiftc ...
+"${DITTO}" "${SOURCE_APP}" "${STAGING_APP}"
+"${CODESIGN}" --verify --deep --strict ...
+"${OPEN}" -n "${TARGET_APP}"
+```
+
+Объяснение: local installer теперь повторяет release-grade deterministic command resolution.
+
+## 33. P1/SSOT - release metadata отставала от исправленного installer
+
+Файл и строка: `Resources/Info.plist:49`, `README.md:35`.
+
+Суть: после installer hardening bundle version и documented release tag оставались `1.0.1`.
+
+Последствие: публичная one-command установка продолжала бы ставить предыдущий GitHub Release без последних security/installer fixes.
+
+Было:
+
+```xml
+<key>CFBundleShortVersionString</key>
+<string>1.0.1</string>
+<key>CFBundleVersion</key>
+<string>2</string>
+```
+
+```bash
+BROWSER_SELECTOR_VERSION=v1.0.1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/UltraDeepAutomation/browser-selector/main/Scripts/install_latest.sh)"
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+Стало:
+
+```xml
+<key>CFBundleShortVersionString</key>
+<string>1.0.2</string>
+<key>CFBundleVersion</key>
+<string>3</string>
+```
+
+```bash
+BROWSER_SELECTOR_VERSION=v1.0.2 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/UltraDeepAutomation/browser-selector/main/Scripts/install_latest.sh)"
+git tag v1.0.2
+git push origin v1.0.2
+```
+
+Объяснение: repository state, app metadata, README и release tag снова имеют один источник правды.
+
+## 34. P1 - installer падал, когда приложение не было запущено
+
+Файл и строка: `Scripts/install_latest.sh:142`, `Scripts/install.sh:50`.
+
+Суть: `pgrep` возвращал exit code `1` при отсутствии процесса, а `set -euo pipefail` превращал нормальное состояние в аварийный выход.
+
+Последствие: fresh install мог завершиться после проверки подписи, не дойдя до копирования app, LaunchServices registration и запуска.
+
+Было:
+
+```bash
+/usr/bin/pgrep -x "${BUNDLE_EXECUTABLE}" 2>/dev/null | while IFS= read -r pid; do
+    command_path="$(/bin/ps -p "${pid}" -o comm= 2>/dev/null || true)"
+    [[ "${command_path}" == "${TARGET_EXECUTABLE}" ]] && printf '%s\n' "${pid}"
+done
+```
+
+Стало:
+
+```bash
+while IFS= read -r pid; do
+    command_path="$(/bin/ps -p "${pid}" -o comm= 2>/dev/null || true)"
+    [[ "${command_path}" == "${TARGET_EXECUTABLE}" ]] && printf '%s\n' "${pid}"
+done < <(/usr/bin/pgrep -x "${BUNDLE_EXECUTABLE}" 2>/dev/null || true)
+```
+
+Объяснение: отсутствие running instance теперь трактуется как пустой список PID, а не как ошибка installer.
+
+## 35. P1 - `.app` получал SIGKILL из-за склеенных document content types
+
+Файл и строка: `Resources/Info.plist:40`.
+
+Суть: `public.html` и `public.xhtml` были объявлены в одном `CFBundleDocumentTypes` entry.
+
+Последствие: подписанный bundle проходил `codesign --verify`, но executable внутри `.app` сразу завершался `SIGKILL`, installer не мог запустить приложение.
+
+Было:
+
+```xml
+<key>LSItemContentTypes</key>
+<array>
+    <string>public.html</string>
+    <string>public.xhtml</string>
+</array>
+```
+
+Стало:
+
+```xml
+<dict>
+    <key>CFBundleTypeName</key>
+    <string>HTML document</string>
+    <key>LSItemContentTypes</key>
+    <array>
+        <string>public.html</string>
+    </array>
+</dict>
+<dict>
+    <key>CFBundleTypeName</key>
+    <string>XHTML document</string>
+    <key>LSItemContentTypes</key>
+    <array>
+        <string>public.xhtml</string>
+    </array>
+</dict>
+```
+
+Объяснение: web content type claims теперь разделены на отдельные LaunchServices document declarations.
+
+## 36. P1 - validation не ловил опасную структуру `CFBundleDocumentTypes`
+
+Файл и строка: `Scripts/validate.sh:52`.
+
+Суть: validation требовал наличие `public.xhtml`, но не проверял, что каждый document type содержит ровно один public content type.
+
+Последствие: release blocker из пункта 35 проходил CI/local validate.
+
+Было:
+
+```bash
+if ! /usr/libexec/PlistBuddy -c "Print :CFBundleDocumentTypes:0:LSItemContentTypes" "${plist_path}" | grep -qx "    public.xhtml"; then
+    echo "Missing browser claim content type in ${plist_path}: public.xhtml" >&2
+    exit 1
+fi
+```
+
+Стало:
+
+```bash
+for document_index in 0 1; do
+    if [[ "$(/usr/libexec/PlistBuddy -c "Print :CFBundleDocumentTypes:${document_index}:LSItemContentTypes" "${plist_path}" | grep -c '^[[:space:]]*public\.')" != "1" ]]; then
+        echo "CFBundleDocumentTypes:${document_index} must declare exactly one public content type in ${plist_path}" >&2
+        exit 1
+    fi
+done
+```
+
+Объяснение: validation теперь закрепляет рабочую структуру LaunchServices declarations, а не только наличие строк.
+
+## 37. P1 - installer не узнавал запущенный app из-за `ps -o comm` и пробела в path
+
+Файл и строка: `Scripts/install_latest.sh:143`, `Scripts/install.sh:51`.
+
+Суть: `ps -o comm` возвращал усеченный command для `Browser Selector.app` path с пробелом.
+
+Последствие: installer мог убить/переустановить app некорректно или сказать, что app не стартовал, хотя процесс уже был жив.
+
+Было:
+
+```bash
+command_path="$(/bin/ps -p "${pid}" -o comm= 2>/dev/null || true)"
+if [[ "${command_path}" == "${TARGET_EXECUTABLE}" ]]; then
+    printf '%s\n' "${pid}"
+fi
+```
+
+Стало:
+
+```bash
+command_path="$(/bin/ps -p "${pid}" -o command= 2>/dev/null || true)"
+if [[ "${command_path}" == "${TARGET_EXECUTABLE}" || "${command_path}" == "${TARGET_EXECUTABLE} "* ]]; then
+    printf '%s\n' "${pid}"
+fi
+```
+
+Объяснение: process detection теперь сравнивает полный executable command и корректно работает с app paths, содержащими пробел.
+
 ## Verification
 
 Выполнено после фиксов:
@@ -720,6 +1007,7 @@ xcrun swiftc Scripts/set_default_browser.swift -o .build/install-tools/set-defau
 swift test
 ./Scripts/validate.sh
 ./Scripts/package_release.sh
+open -n dist/Browser\ Selector.app
 BROWSER_SELECTOR_RELEASE_BASE_URL=file://... /bin/bash Scripts/install_latest.sh
 env -i HOME=$HOME PATH=/usr/bin:/bin:/usr/sbin:/sbin BROWSER_SELECTOR_RELEASE_BASE_URL=file://... /bin/bash Scripts/install_latest.sh
 ./Scripts/install.sh

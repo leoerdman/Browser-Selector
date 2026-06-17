@@ -24,10 +24,13 @@ validate_browser_plist() {
     local plist_path="$1"
     local declared_web_schemes
     local declared_web_content_types
+    local declared_document_types
+    local document_index
 
     plutil -lint "${plist_path}" >/dev/null
     declared_web_schemes="$("${DEFAULT_BROWSER_HELPER}" --print-web-schemes "${plist_path}")"
     declared_web_content_types="$("${DEFAULT_BROWSER_HELPER}" --print-web-content-types "${plist_path}")"
+    declared_document_types="$(/usr/libexec/PlistBuddy -c "Print :CFBundleDocumentTypes" "${plist_path}")"
 
     for scheme in http https; do
         if ! printf '%s\n' "${declared_web_schemes}" | grep -qx "${scheme}"; then
@@ -53,10 +56,22 @@ validate_browser_plist() {
         fi
     done
 
-    if ! /usr/libexec/PlistBuddy -c "Print :CFBundleDocumentTypes:0:LSItemContentTypes" "${plist_path}" | grep -qx "    public.xhtml"; then
+    if ! printf '%s\n' "${declared_document_types}" | sed 's/^[[:space:]]*//' | grep -qx "public.xhtml"; then
         echo "Missing browser claim content type in ${plist_path}: public.xhtml" >&2
         exit 1
     fi
+
+    for document_index in 0 1; do
+        if [[ "$(/usr/libexec/PlistBuddy -c "Print :CFBundleDocumentTypes:${document_index}:LSHandlerRank" "${plist_path}")" != "Owner" ]]; then
+            echo "CFBundleDocumentTypes:${document_index}:LSHandlerRank must be Owner in ${plist_path}" >&2
+            exit 1
+        fi
+
+        if [[ "$(/usr/libexec/PlistBuddy -c "Print :CFBundleDocumentTypes:${document_index}:LSItemContentTypes" "${plist_path}" | grep -c '^[[:space:]]*public\.')" != "1" ]]; then
+            echo "CFBundleDocumentTypes:${document_index} must declare exactly one public content type in ${plist_path}" >&2
+            exit 1
+        fi
+    done
 
     if ! /usr/libexec/PlistBuddy -c "Print :NSAppleEventsUsageDescription" "${plist_path}" >/dev/null; then
         echo "Missing NSAppleEventsUsageDescription in ${plist_path}" >&2
@@ -65,11 +80,6 @@ validate_browser_plist() {
 
     if [[ "$(/usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes:0:LSHandlerRank" "${plist_path}")" != "Owner" ]]; then
         echo "CFBundleURLTypes:0:LSHandlerRank must be Owner in ${plist_path}" >&2
-        exit 1
-    fi
-
-    if [[ "$(/usr/libexec/PlistBuddy -c "Print :CFBundleDocumentTypes:0:LSHandlerRank" "${plist_path}")" != "Owner" ]]; then
-        echo "CFBundleDocumentTypes:0:LSHandlerRank must be Owner in ${plist_path}" >&2
         exit 1
     fi
 
