@@ -24,7 +24,7 @@
 ## Установка одной командой
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/UltraDeepAutomation/browser-selector/main/Scripts/install_latest.sh)"
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/UltraDeepAutomation/Browser-Selector/main/Scripts/install_latest.sh)"
 ```
 
 Скрипт скачивает последний GitHub Release `BrowserSelector.zip`, проверяет `BrowserSelector.zip.sha256`, устанавливает приложение в `~/Applications/Browser Selector.app`, регистрирует bundle в LaunchServices, назначает Browser Selector обработчиком `http`, `https` и `public.html`, при необходимости ждет системное подтверждение macOS, затем запускает menu bar приложение.
@@ -32,7 +32,7 @@
 Для установки конкретной версии:
 
 ```bash
-BROWSER_SELECTOR_VERSION=v1.0.2 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/UltraDeepAutomation/browser-selector/main/Scripts/install_latest.sh)"
+BROWSER_SELECTOR_VERSION=v1.0.2 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/UltraDeepAutomation/Browser-Selector/main/Scripts/install_latest.sh)"
 ```
 
 ## Установка из локального клона

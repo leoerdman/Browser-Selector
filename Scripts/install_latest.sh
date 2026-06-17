@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="${BROWSER_SELECTOR_REPO:-UltraDeepAutomation/browser-selector}"
+REPO="${BROWSER_SELECTOR_REPO:-UltraDeepAutomation/Browser-Selector}"
 VERSION="${BROWSER_SELECTOR_VERSION:-latest}"
 ASSET_NAME="${BROWSER_SELECTOR_ASSET_NAME:-BrowserSelector.zip}"
 APP_NAME="Browser Selector.app"

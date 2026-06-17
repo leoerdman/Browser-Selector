@@ -4,7 +4,7 @@
 
 Область: файлы проекта в репозитории, без `.git`, `.build`, `dist`, generated iconset и сторонних зависимостей.
 
-Итог: найдено 37 реальных дефектов из кода. P0 не найдено. Найденные P1 исправлены полностью. P2/P3/UX/SSOT дефекты из списка ниже тоже исправлены.
+Итог: найдено 38 реальных дефектов из кода. P0 не найдено. Найденные P1 исправлены полностью. P2/P3/UX/SSOT дефекты из списка ниже тоже исправлены.
 
 ## 1. P1 - release installer убивал процессы только по имени
 
@@ -863,7 +863,7 @@ git push origin v1.0.1
 ```
 
 ```bash
-BROWSER_SELECTOR_VERSION=v1.0.2 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/UltraDeepAutomation/browser-selector/main/Scripts/install_latest.sh)"
+BROWSER_SELECTOR_VERSION=v1.0.2 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/UltraDeepAutomation/Browser-Selector/main/Scripts/install_latest.sh)"
 git tag v1.0.2
 git push origin v1.0.2
 ```
@@ -996,6 +996,30 @@ fi
 ```
 
 Объяснение: process detection теперь сравнивает полный executable command и корректно работает с app paths, содержащими пробел.
+
+## 38. P3 - public install path использовал redirect repo URL
+
+Файл и строка: `Scripts/install_latest.sh:4`, `README.md:27`.
+
+Суть: default repo и README raw URL указывали на `UltraDeepAutomation/browser-selector`, хотя GitHub canonical repo - `UltraDeepAutomation/Browser-Selector`.
+
+Последствие: install flow работал через redirect и давал лишний источник путаницы при диагностике release/install проблем.
+
+Было:
+
+```bash
+REPO="${BROWSER_SELECTOR_REPO:-UltraDeepAutomation/browser-selector}"
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/UltraDeepAutomation/browser-selector/main/Scripts/install_latest.sh)"
+```
+
+Стало:
+
+```bash
+REPO="${BROWSER_SELECTOR_REPO:-UltraDeepAutomation/Browser-Selector}"
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/UltraDeepAutomation/Browser-Selector/main/Scripts/install_latest.sh)"
+```
+
+Объяснение: public install docs и installer default теперь используют canonical GitHub location без redirect.
 
 ## Verification
 
