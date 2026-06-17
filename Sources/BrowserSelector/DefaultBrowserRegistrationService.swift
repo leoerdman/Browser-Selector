@@ -31,6 +31,8 @@ final class DefaultBrowserRegistrationService {
 
         return BrowserSelectorConstants.webURLSchemes.allSatisfy { scheme in
             defaultHandler(forURLScheme: scheme) == activeBundleIdentifier
+        } && BrowserSelectorConstants.webContentTypes.allSatisfy { contentType in
+            defaultHandler(forContentType: contentType) == activeBundleIdentifier
         }
     }
 
@@ -71,6 +73,25 @@ final class DefaultBrowserRegistrationService {
             }
         }
 
+        for contentType in BrowserSelectorConstants.webContentTypes {
+            guard defaultHandler(forContentType: contentType) != activeBundleIdentifier else {
+                continue
+            }
+
+            let status = LSSetDefaultRoleHandlerForContentType(
+                contentType as CFString,
+                .viewer,
+                activeBundleIdentifier as CFString
+            )
+
+            guard status == noErr else {
+                throw DefaultBrowserRegistrationError.launchServicesFailure(
+                    scheme: contentType,
+                    status: status
+                )
+            }
+        }
+
         return isDefaultBrowser ? .alreadyDefault : .requestedSystemConfirmation
     }
 
@@ -82,5 +103,10 @@ final class DefaultBrowserRegistrationService {
         }
 
         return Bundle(url: applicationURL)?.bundleIdentifier
+    }
+
+    func defaultHandler(forContentType contentType: String) -> String? {
+        LSCopyDefaultRoleHandlerForContentType(contentType as CFString, .viewer)?
+            .takeRetainedValue() as String?
     }
 }

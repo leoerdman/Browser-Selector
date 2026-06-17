@@ -4,17 +4,22 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "v*"
   pull_request:
     branches:
       - main
+  workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  macos:
-    name: macOS App
+  validate:
+    name: Validate macOS App
     runs-on: macos-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
@@ -25,14 +30,56 @@ jobs:
           xcodebuild -version
           swift --version
 
-      - name: Build Swift package
-        run: swift build -c release
-
       - name: Validate signed app bundle
         run: ./Scripts/validate.sh
 
-      - name: Upload app artifact
+      - name: Package release archive
+        run: ./Scripts/package_release.sh
+
+      - name: Upload release artifact
         uses: actions/upload-artifact@v7
         with:
-          name: Browser Selector.app
-          path: dist/Browser Selector.app
+          name: BrowserSelector-release
+          path: |
+            dist/release/BrowserSelector.zip
+            dist/release/BrowserSelector.zip.sha256
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: validate
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Package release archive
+        run: ./Scripts/package_release.sh
+
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          ASSETS=(
+            "dist/release/BrowserSelector.zip"
+            "dist/release/BrowserSelector.zip.sha256"
+          )
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" "${ASSETS[@]}" --clobber
+          else
+            gh release create "${TAG}" "${ASSETS[@]}" \
+              --title "Browser Selector ${TAG}" \
+              --generate-notes \
+              --latest
+          fi

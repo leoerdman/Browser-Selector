@@ -6,6 +6,8 @@ protocol MenuBarControllerDelegate: AnyObject {
     func menuBarControllerDidRequestBrowserRefresh(_ controller: MenuBarController)
     func menuBarControllerDidRequestRememberedChoiceReset(_ controller: MenuBarController)
     func menuBarControllerDidRequestTestOpen(_ controller: MenuBarController)
+    func menuBarControllerDidRequestSystemLinkTest(_ controller: MenuBarController)
+    func menuBarControllerDidRequestDiagnostics(_ controller: MenuBarController)
     func menuBarControllerDidRequestAbout(_ controller: MenuBarController)
 }
 
@@ -118,6 +120,22 @@ final class MenuBarController: NSObject {
         testItem.target = self
         menu.addItem(testItem)
 
+        let systemLinkTestItem = NSMenuItem(
+            title: "Проверить системную ссылку",
+            action: #selector(testSystemLinkOpen),
+            keyEquivalent: ""
+        )
+        systemLinkTestItem.target = self
+        menu.addItem(systemLinkTestItem)
+
+        let diagnosticsItem = NSMenuItem(
+            title: "Показать диагностику",
+            action: #selector(showDiagnostics),
+            keyEquivalent: ""
+        )
+        diagnosticsItem.target = self
+        menu.addItem(diagnosticsItem)
+
         let refreshItem = NSMenuItem(
             title: "Обновить список браузеров",
             action: #selector(refreshBrowsers),
@@ -175,6 +193,14 @@ final class MenuBarController: NSObject {
 
     @objc private func testOpen() {
         delegate?.menuBarControllerDidRequestTestOpen(self)
+    }
+
+    @objc private func testSystemLinkOpen() {
+        delegate?.menuBarControllerDidRequestSystemLinkTest(self)
+    }
+
+    @objc private func showDiagnostics() {
+        delegate?.menuBarControllerDidRequestDiagnostics(self)
     }
 
     @objc private func showAbout() {

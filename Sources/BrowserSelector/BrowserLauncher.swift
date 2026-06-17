@@ -7,6 +7,11 @@ final class BrowserLauncher {
         case requireUserAction(Error)
     }
 
+    private enum Timeout {
+        static let appleScript: TimeInterval = 12
+        static let process: TimeInterval = 10
+    }
+
     private let appleScriptQueue = DispatchQueue(label: "com.leoerdman.BrowserSelector.appleScript")
     private var activeProcesses: [UUID: Process] = [:]
 
@@ -92,24 +97,53 @@ final class BrowserLauncher {
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
         appleScriptQueue.async {
+            let result = Self.executeAppleScriptWithTimeout(source, timeout: Timeout.appleScript)
+            DispatchQueue.main.async {
+                completion(result)
+            }
+        }
+    }
+
+    private static func executeAppleScriptWithTimeout(
+        _ source: String,
+        timeout: TimeInterval
+    ) -> Result<Void, Error> {
+        let semaphore = DispatchSemaphore(value: 0)
+        let resultLock = NSLock()
+        var result: Result<Void, Error>?
+
+        DispatchQueue.global(qos: .userInitiated).async {
             guard let appleScript = NSAppleScript(source: source) else {
-                DispatchQueue.main.async {
-                    completion(.failure(BrowserLaunchError(message: "Не удалось подготовить AppleScript.")))
-                }
+                resultLock.lock()
+                result = .failure(BrowserLaunchError(message: "Не удалось подготовить AppleScript."))
+                resultLock.unlock()
+                semaphore.signal()
                 return
             }
 
             var errorInfo: NSDictionary?
             appleScript.executeAndReturnError(&errorInfo)
 
-            DispatchQueue.main.async {
-                if let errorInfo {
-                    completion(.failure(BrowserLaunchError(errorInfo: errorInfo)))
-                } else {
-                    completion(.success(()))
-                }
+            resultLock.lock()
+            if let errorInfo {
+                result = .failure(BrowserLaunchError(errorInfo: errorInfo))
+            } else {
+                result = .success(())
             }
+            resultLock.unlock()
+            semaphore.signal()
         }
+
+        guard semaphore.wait(timeout: .now() + timeout) == .success else {
+            return .failure(BrowserLaunchError(message: "AppleScript не ответил за \(Int(timeout)) секунд."))
+        }
+
+        resultLock.lock()
+        defer {
+            resultLock.unlock()
+        }
+
+        return result ?? .failure(BrowserLaunchError(message: "AppleScript завершился без результата."))
     }
 
     private func runProcess(
@@ -127,7 +161,18 @@ final class BrowserLauncher {
         process.standardError = standardError
         process.standardOutput = standardOutput
 
+        let timeoutWorkItem = DispatchWorkItem { [weak process] in
+            guard let process,
+                  process.isRunning
+            else {
+                return
+            }
+
+            process.terminate()
+        }
+
         process.terminationHandler = { [weak self, standardError, standardOutput] terminatedProcess in
+            timeoutWorkItem.cancel()
             let outputMessage = Self.readString(from: standardOutput)
             let errorMessage = Self.readString(from: standardError)
 
@@ -158,7 +203,12 @@ final class BrowserLauncher {
         do {
             activeProcesses[processID] = process
             try process.run()
+            DispatchQueue.global(qos: .utility).asyncAfter(
+                deadline: .now() + Timeout.process,
+                execute: timeoutWorkItem
+            )
         } catch {
+            timeoutWorkItem.cancel()
             activeProcesses[processID] = nil
             completion(.failure(error))
         }

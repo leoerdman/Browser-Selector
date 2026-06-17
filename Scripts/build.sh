@@ -12,6 +12,8 @@ CONTENTS_DIR="${APP_DIR}/Contents"
 RESOURCES_DIR="${CONTENTS_DIR}/Resources"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
 SIGN_IDENTITY="${CODE_SIGN_IDENTITY:-}"
+MACOS_DEPLOYMENT_TARGET="${MACOS_DEPLOYMENT_TARGET:-13.0}"
+BROWSER_SELECTOR_ARCHS="${BROWSER_SELECTOR_ARCHS:-}"
 SWIFT_PACKAGE_FLAGS=()
 
 if [[ "${SWIFTPM_DISABLE_SANDBOX:-0}" == "1" ]]; then
@@ -23,16 +25,56 @@ cd "${ROOT_DIR}"
 swift Scripts/generate_icon.swift
 iconutil -c icns -o Resources/BrowserSelector.icns Resources/BrowserSelector.iconset
 
-if [[ "${#SWIFT_PACKAGE_FLAGS[@]}" -gt 0 ]]; then
-    swift build "${SWIFT_PACKAGE_FLAGS[@]}" -c release
+build_for_arch() {
+    local arch="$1"
+    local scratch_path="${ROOT_DIR}/.build/${arch}-release"
+
+    if [[ "${#SWIFT_PACKAGE_FLAGS[@]}" -gt 0 ]]; then
+        swift build \
+            "${SWIFT_PACKAGE_FLAGS[@]}" \
+            -c release \
+            --triple "${arch}-apple-macosx${MACOS_DEPLOYMENT_TARGET}" \
+            --scratch-path "${scratch_path}" >&2
+    else
+        swift build \
+            -c release \
+            --triple "${arch}-apple-macosx${MACOS_DEPLOYMENT_TARGET}" \
+            --scratch-path "${scratch_path}" >&2
+    fi
+
+    printf '%s/%s-apple-macosx/release/%s\n' "${scratch_path}" "${arch}" "${BINARY_NAME}"
+}
+
+BINARY_SOURCE=""
+if [[ -n "${BROWSER_SELECTOR_ARCHS}" ]]; then
+    UNIVERSAL_DIR="${ROOT_DIR}/.build/universal-release"
+    UNIVERSAL_BINARY="${UNIVERSAL_DIR}/${BINARY_NAME}"
+    mkdir -p "${UNIVERSAL_DIR}"
+
+    BINARY_SLICES=()
+    for arch in ${BROWSER_SELECTOR_ARCHS}; do
+        BINARY_SLICES+=("$(build_for_arch "${arch}")")
+    done
+
+    if [[ "${#BINARY_SLICES[@]}" -eq 1 ]]; then
+        BINARY_SOURCE="${BINARY_SLICES[0]}"
+    else
+        lipo -create "${BINARY_SLICES[@]}" -output "${UNIVERSAL_BINARY}"
+        BINARY_SOURCE="${UNIVERSAL_BINARY}"
+    fi
 else
-    swift build -c release
+    if [[ "${#SWIFT_PACKAGE_FLAGS[@]}" -gt 0 ]]; then
+        swift build "${SWIFT_PACKAGE_FLAGS[@]}" -c release
+    else
+        swift build -c release
+    fi
+    BINARY_SOURCE=".build/release/${BINARY_NAME}"
 fi
 
 rm -rf "${APP_DIR}"
 mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}"
 
-cp ".build/release/${BINARY_NAME}" "${MACOS_DIR}/${BINARY_NAME}"
+cp "${BINARY_SOURCE}" "${MACOS_DIR}/${BINARY_NAME}"
 cp "${INFO_PLIST}" "${CONTENTS_DIR}/Info.plist"
 cp "Resources/${ICON_NAME}.icns" "${RESOURCES_DIR}/${ICON_NAME}.icns"
 printf 'APPL????' > "${CONTENTS_DIR}/PkgInfo"
@@ -40,18 +82,7 @@ printf 'APPL????' > "${CONTENTS_DIR}/PkgInfo"
 chmod +x "${MACOS_DIR}/${BINARY_NAME}"
 plutil -lint "${CONTENTS_DIR}/Info.plist" >/dev/null
 
-if [[ -z "${SIGN_IDENTITY}" ]]; then
-    IDENTITY_LIST="$(security find-identity -v -p codesigning 2>/dev/null || true)"
-    SIGN_IDENTITY="$(printf '%s\n' "${IDENTITY_LIST}" | awk -F '"' '/Developer ID Application:/ { print $2; exit }')"
-
-    if [[ -z "${SIGN_IDENTITY}" ]]; then
-        SIGN_IDENTITY="$(printf '%s\n' "${IDENTITY_LIST}" | awk -F '"' '/Apple Development:/ { print $2; exit }')"
-    fi
-
-    if [[ -z "${SIGN_IDENTITY}" ]]; then
-        SIGN_IDENTITY="$(printf '%s\n' "${IDENTITY_LIST}" | awk -F '"' '/"/ { print $2; exit }')"
-    fi
-fi
+SIGN_IDENTITY="$("${ROOT_DIR}/Scripts/resolve_signing_identity.sh")"
 
 if [[ -z "${SIGN_IDENTITY}" || "${SIGN_IDENTITY}" == "-" ]]; then
     SIGN_IDENTITY="-"

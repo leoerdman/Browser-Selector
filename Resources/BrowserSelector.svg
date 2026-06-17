@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Browser Selector app icon">
+  <defs>
+    <linearGradient id="bg" x1="120" y1="900" x2="900" y2="120" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#08101c"/>
+      <stop offset="0.4" stop-color="#10395a"/>
+      <stop offset="0.72" stop-color="#1976b0"/>
+      <stop offset="1" stop-color="#4ed3c9"/>
+    </linearGradient>
+    <linearGradient id="globe" x1="260" y1="800" x2="760" y2="210" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0c3a5b"/>
+      <stop offset="0.42" stop-color="#117aae"/>
+      <stop offset="0.74" stop-color="#37cdce"/>
+      <stop offset="1" stop-color="#a4f4e8"/>
+    </linearGradient>
+    <linearGradient id="browser-blue" x1="330" y1="604" x2="424" y2="492" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1b8cee"/>
+      <stop offset="1" stop-color="#4ddbff"/>
+    </linearGradient>
+    <linearGradient id="browser-warm" x1="470" y1="604" x2="564" y2="492" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffbf4b"/>
+      <stop offset="1" stop-color="#ff5e7a"/>
+    </linearGradient>
+    <linearGradient id="browser-green" x1="610" y1="604" x2="704" y2="492" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5ae5a7"/>
+      <stop offset="1" stop-color="#2c89ff"/>
+    </linearGradient>
+    <clipPath id="globe-clip">
+      <circle cx="512" cy="502" r="348"/>
+    </clipPath>
+    <filter id="shadow" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000000" flood-opacity="0.32"/>
+    </filter>
+    <filter id="plaque-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#000000" flood-opacity="0.42"/>
+    </filter>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="224" fill="url(#bg)" filter="url(#shadow)"/>
+  <rect x="64" y="64" width="896" height="896" rx="224" fill="none" stroke="#ffffff" stroke-opacity="0.16" stroke-width="3"/>
+  <path d="M180 554C342 282 682 268 846 452C656 612 362 670 190 570" fill="none" stroke="#ffffff" stroke-opacity="0.24" stroke-width="24" stroke-linecap="round"/>
+  <circle cx="512" cy="502" r="348" fill="url(#globe)" filter="url(#shadow)"/>
+  <g clip-path="url(#globe-clip)" fill="none" stroke="#ffffff" stroke-linecap="round">
+    <ellipse cx="512" cy="502" rx="268" ry="348" stroke-opacity="0.24" stroke-width="8"/>
+    <ellipse cx="512" cy="502" rx="174" ry="348" stroke-opacity="0.24" stroke-width="8"/>
+    <ellipse cx="512" cy="502" rx="80" ry="348" stroke-opacity="0.24" stroke-width="8"/>
+    <path d="M216 710C372 658 652 658 808 710" stroke-opacity="0.2" stroke-width="8"/>
+    <path d="M216 600C372 548 652 548 808 600" stroke-opacity="0.2" stroke-width="8"/>
+    <path d="M216 484C372 432 652 432 808 484" stroke-opacity="0.2" stroke-width="8"/>
+    <path d="M216 370C372 318 652 318 808 370" stroke-opacity="0.2" stroke-width="8"/>
+  </g>
+  <g clip-path="url(#globe-clip)">
+    <ellipse cx="367" cy="416" rx="105" ry="48" fill="#49e1aa" opacity="0.36"/>
+    <ellipse cx="629" cy="377" rx="89" ry="43" fill="#ffce61" opacity="0.27"/>
+    <ellipse cx="690" cy="624" rx="90" ry="50" fill="#55ecc9" opacity="0.28"/>
+    <ellipse cx="370" cy="650" rx="84" ry="42" fill="#ff6a8b" opacity="0.24"/>
+  </g>
+  <circle cx="512" cy="502" r="348" fill="none" stroke="#ffffff" stroke-opacity="0.52" stroke-width="16"/>
+  <path d="M290 348C332 270 408 222 492 230" fill="none" stroke="#ffffff" stroke-opacity="0.32" stroke-width="20" stroke-linecap="round"/>
+  <g filter="url(#plaque-shadow)">
+    <rect x="250" y="368" width="524" height="300" rx="76" fill="#080f18" fill-opacity="0.82"/>
+    <rect x="250" y="368" width="524" height="300" rx="76" fill="#ffffff" fill-opacity="0.07" stroke="#ffffff" stroke-opacity="0.28" stroke-width="3"/>
+    <path d="M336 436H688" stroke="#ffffff" stroke-opacity="0.2" stroke-width="7" stroke-linecap="round"/>
+    <circle cx="337" cy="410" r="7" fill="#ff6880"/>
+    <circle cx="365" cy="410" r="7" fill="#ffce61"/>
+    <circle cx="393" cy="410" r="7" fill="#53e2b1"/>
+    <g>
+      <rect x="316" y="492" width="112" height="112" rx="26" fill="#ffffff" fill-opacity="0.16" stroke="#ffffff" stroke-opacity="0.22" stroke-width="2"/>
+      <circle cx="372" cy="548" r="36" fill="url(#browser-blue)" stroke="#ffffff" stroke-opacity="0.92" stroke-width="5"/>
+      <path d="M366 566L390 526" stroke="#ffffff" stroke-opacity="0.82" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="372" cy="548" r="9" fill="#ffffff" fill-opacity="0.88"/>
+    </g>
+    <g>
+      <rect x="456" y="492" width="112" height="112" rx="26" fill="#ffffff" fill-opacity="0.16" stroke="#ffffff" stroke-opacity="0.22" stroke-width="2"/>
+      <circle cx="512" cy="548" r="36" fill="url(#browser-warm)" stroke="#ffffff" stroke-opacity="0.92" stroke-width="5"/>
+      <path d="M506 566L530 526" stroke="#ffffff" stroke-opacity="0.82" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="512" cy="548" r="9" fill="#ffffff" fill-opacity="0.88"/>
+    </g>
+    <g>
+      <rect x="596" y="492" width="112" height="112" rx="26" fill="#ffffff" fill-opacity="0.16" stroke="#ffffff" stroke-opacity="0.22" stroke-width="2"/>
+      <circle cx="652" cy="548" r="36" fill="url(#browser-green)" stroke="#ffffff" stroke-opacity="0.92" stroke-width="5"/>
+      <path d="M646 566L670 526" stroke="#ffffff" stroke-opacity="0.82" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="652" cy="548" r="9" fill="#ffffff" fill-opacity="0.88"/>
+    </g>
+  </g>
+</svg>

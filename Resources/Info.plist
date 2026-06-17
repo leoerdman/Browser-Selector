@@ -2,6 +2,17 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>ASWebAuthenticationSessionWebBrowserSupportCapabilities</key>
+    <dict>
+        <key>AdditionalHeaderFieldsAreSupported</key>
+        <true/>
+        <key>CallbackURLMatchingIsSupported</key>
+        <true/>
+        <key>EphemeralBrowserSessionIsSupported</key>
+        <true/>
+        <key>IsSupported</key>
+        <true/>
+    </dict>
     <key>CFBundleDevelopmentRegion</key>
     <string>ru</string>
     <key>CFBundleDisplayName</key>
@@ -16,6 +27,22 @@
     <string>6.0</string>
     <key>CFBundleName</key>
     <string>Browser Selector</string>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>HTML document</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Owner</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.html</string>
+                <string>public.xhtml</string>
+            </array>
+        </dict>
+    </array>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -33,6 +60,18 @@
             <array>
                 <string>http</string>
                 <string>https</string>
+            </array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Owner</string>
+            <key>CFBundleURLName</key>
+            <string>Local file URL</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>file</string>
             </array>
         </dict>
     </array>

@@ -1,19 +1,164 @@
-#!/usr/bin/env swift
-
-import CoreServices
 import AppKit
+import CoreServices
 import Foundation
 
-let expectedArgumentCount = 2
+private struct AppInfoPlist: Decodable {
+    let urlTypes: [URLType]
+    let documentTypes: [DocumentType]?
+
+    enum CodingKeys: String, CodingKey {
+        case urlTypes = "CFBundleURLTypes"
+        case documentTypes = "CFBundleDocumentTypes"
+    }
+}
+
+private struct URLType: Decodable {
+    let schemes: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case schemes = "CFBundleURLSchemes"
+    }
+}
+
+private struct DocumentType: Decodable {
+    let contentTypes: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case contentTypes = "LSItemContentTypes"
+    }
+}
+
+private let webSchemes = Set(["http", "https"])
+private let webContentTypes = Set(["public.html"])
+
+private func writeStandardError(_ message: String) {
+    FileHandle.standardError.write(Data(message.utf8))
+}
+
+private func fail(_ message: String, code: Int32 = 1) -> Never {
+    writeStandardError("\(message)\n")
+    exit(code)
+}
+
+private func loadInfoPlist(from infoPlistURL: URL) -> AppInfoPlist {
+    let data: Data
+    do {
+        data = try Data(contentsOf: infoPlistURL)
+    } catch {
+        fail("Unable to read Info.plist at \(infoPlistURL.path): \(error.localizedDescription)", code: 66)
+    }
+
+    do {
+        return try PropertyListDecoder().decode(AppInfoPlist.self, from: data)
+    } catch {
+        fail("Unable to parse Info.plist at \(infoPlistURL.path): \(error.localizedDescription)", code: 65)
+    }
+}
+
+private func loadWebURLSchemes(from infoPlistURL: URL) -> [String] {
+    let infoPlist = loadInfoPlist(from: infoPlistURL)
+    let schemes = infoPlist.urlTypes
+        .flatMap(\.schemes)
+        .map { $0.lowercased() }
+        .filter { webSchemes.contains($0) }
+
+    let uniqueSchemes = schemes.reduce(into: [String]()) { result, scheme in
+        guard !result.contains(scheme) else {
+            return
+        }
+
+        result.append(scheme)
+    }
+    guard !uniqueSchemes.isEmpty else {
+        fail("Info.plist does not declare http/https CFBundleURLSchemes.", code: 65)
+    }
+
+    return uniqueSchemes
+}
+
+private func loadWebContentTypes(from infoPlistURL: URL) -> [String] {
+    let infoPlist = loadInfoPlist(from: infoPlistURL)
+    let contentTypes = (infoPlist.documentTypes ?? [])
+        .flatMap { $0.contentTypes ?? [] }
+        .map { $0.lowercased() }
+        .filter { webContentTypes.contains($0) }
+
+    let uniqueContentTypes = contentTypes.reduce(into: [String]()) { result, contentType in
+        guard !result.contains(contentType) else {
+            return
+        }
+
+        result.append(contentType)
+    }
+
+    guard !uniqueContentTypes.isEmpty else {
+        fail("Info.plist does not declare public.html CFBundleDocumentTypes.", code: 65)
+    }
+
+    return uniqueContentTypes
+}
+
+private func defaultHandlerBundleIdentifier(for scheme: String) -> String? {
+    guard let url = URL(string: "\(scheme)://browser-selector.local"),
+          let applicationURL = NSWorkspace.shared.urlForApplication(toOpen: url)
+    else {
+        return nil
+    }
+
+    return Bundle(url: applicationURL)?.bundleIdentifier
+}
+
+private func defaultRoleHandlerBundleIdentifier(for contentType: String) -> String? {
+    LSCopyDefaultRoleHandlerForContentType(contentType as NSString, .viewer)?
+        .takeRetainedValue() as String?
+}
+
+let expectedArgumentCount = 3
+if CommandLine.arguments.count == expectedArgumentCount,
+   CommandLine.arguments[1] == "--print-web-schemes"
+{
+    let infoPlistURL = URL(fileURLWithPath: CommandLine.arguments[2])
+    print(loadWebURLSchemes(from: infoPlistURL).joined(separator: "\n"))
+    exit(0)
+}
+
+if CommandLine.arguments.count == expectedArgumentCount,
+   CommandLine.arguments[1] == "--print-web-content-types"
+{
+    let infoPlistURL = URL(fileURLWithPath: CommandLine.arguments[2])
+    print(loadWebContentTypes(from: infoPlistURL).joined(separator: "\n"))
+    exit(0)
+}
+
+if CommandLine.arguments.count == expectedArgumentCount,
+   CommandLine.arguments[1] == "--print-default-handlers"
+{
+    let infoPlistURL = URL(fileURLWithPath: CommandLine.arguments[2])
+    for scheme in loadWebURLSchemes(from: infoPlistURL) {
+        print("\(scheme)=\(defaultHandlerBundleIdentifier(for: scheme) ?? "nil")")
+    }
+    for contentType in loadWebContentTypes(from: infoPlistURL) {
+        print("\(contentType)=\(defaultRoleHandlerBundleIdentifier(for: contentType) ?? "nil")")
+    }
+    exit(0)
+}
+
 guard CommandLine.arguments.count == expectedArgumentCount else {
-    FileHandle.standardError.write(
-        Data("Usage: set_default_browser.swift <bundle-identifier>\n".utf8)
+    fail(
+        """
+        Usage: set-default-browser <bundle-identifier> <info-plist-path>
+               set-default-browser --print-web-schemes <info-plist-path>
+               set-default-browser --print-web-content-types <info-plist-path>
+               set-default-browser --print-default-handlers <info-plist-path>
+        """,
+        code: 64
     )
-    exit(64)
 }
 
 let bundleIdentifier = CommandLine.arguments[1]
-let schemes = ["http", "https"]
+let infoPlistURL = URL(fileURLWithPath: CommandLine.arguments[2])
+let schemes = loadWebURLSchemes(from: infoPlistURL)
+let contentTypes = loadWebContentTypes(from: infoPlistURL)
 
 for scheme in schemes {
     let status = LSSetDefaultHandlerForURLScheme(
@@ -22,18 +167,25 @@ for scheme in schemes {
     )
 
     guard status == noErr || status == -54 else {
-        FileHandle.standardError.write(
-            Data("LaunchServices returned \(status) while setting \(scheme) handler.\n".utf8)
-        )
-        exit(1)
+        fail("LaunchServices returned \(status) while setting \(scheme) handler.")
+    }
+}
+
+for contentType in contentTypes {
+    let status = LSSetDefaultRoleHandlerForContentType(
+        contentType as NSString,
+        .viewer,
+        bundleIdentifier as NSString
+    )
+
+    guard status == noErr else {
+        fail("LaunchServices returned \(status) while setting \(contentType) viewer.")
     }
 }
 
 var mismatches: [String] = []
 for scheme in schemes {
-    let url = URL(string: "\(scheme)://browser-selector.local")!
-    let applicationURL = NSWorkspace.shared.urlForApplication(toOpen: url)
-    let actualHandler = applicationURL.flatMap { Bundle(url: $0)?.bundleIdentifier }
+    let actualHandler = defaultHandlerBundleIdentifier(for: scheme)
 
     guard actualHandler == bundleIdentifier else {
         mismatches.append("\(scheme)=\(actualHandler ?? "nil")")
@@ -41,11 +193,18 @@ for scheme in schemes {
     }
 }
 
-guard mismatches.isEmpty else {
-    FileHandle.standardError.write(
-        Data("Default browser was not applied: \(mismatches.joined(separator: ", ")).\n".utf8)
-    )
-    exit(1)
+for contentType in contentTypes {
+    let actualHandler = defaultRoleHandlerBundleIdentifier(for: contentType)
+
+    guard actualHandler == bundleIdentifier else {
+        mismatches.append("\(contentType)=\(actualHandler ?? "nil")")
+        continue
+    }
 }
 
-print("Default web handler: \(bundleIdentifier)")
+guard mismatches.isEmpty else {
+    fail("Default browser was not applied: \(mismatches.joined(separator: ", ")).")
+}
+
+let handledTypes = (schemes + contentTypes).joined(separator: ", ")
+print("Default web handler: \(bundleIdentifier) for \(handledTypes)")

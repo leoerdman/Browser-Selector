@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let browserLauncher = BrowserLauncher()
     private let browserUsageStore = BrowserUsageStore.shared
     private let registrationService = DefaultBrowserRegistrationService()
+    private let webAuthenticationSessionCoordinator = WebAuthenticationSessionCoordinator()
 
     private lazy var dispatchCoordinator = URLDispatchCoordinator(
         browserRepository: browserRepository,
@@ -24,9 +25,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var defaultBrowserMonitor: DispatchSourceTimer?
     private var defaultBrowserMonitorAttempts = 0
+    private var wasLaunchedByAuthenticationServices = false
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        wasLaunchedByAuthenticationServices = webAuthenticationSessionCoordinator.install()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        BrowserSelectorDiagnostics.record(
+            "launch bundle=\(AppMetadata.bundleIdentifier ?? "nil") url=\(Bundle.main.bundleURL.path)"
+        )
 
         NSAppleEventManager.shared().setEventHandler(
             self,
@@ -38,7 +46,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBarController.install()
 
         DispatchQueue.main.async { [weak self] in
-            self?.showDefaultBrowserPromptIfNeeded()
+            guard let self else {
+                return
+            }
+
+            if wasLaunchedByAuthenticationServices {
+                BrowserSelectorDiagnostics.record("default-browser-prompt skipped reason=authentication-services-launch")
+                self.menuBarController.refreshMenu()
+            } else {
+                self.showDefaultBrowserPromptIfNeeded()
+            }
         }
     }
 
@@ -50,7 +67,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        urls.forEach { dispatchCoordinator.handle(url: $0) }
+        BrowserSelectorDiagnostics.record(
+            "application-open-urls \(urls.map(BrowserSelectorDiagnostics.describe(url:)).joined(separator: ", "))"
+        )
+        urls.forEach(routeIncomingURL)
     }
 
     @objc private func handleGetURLEvent(
@@ -60,10 +80,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let urlString = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
               let url = URL(string: urlString)
         else {
+            BrowserSelectorDiagnostics.record("apple-event-url invalid")
             UserNotifier.showError(
                 title: "Не удалось прочитать ссылку",
                 message: "macOS передала некорректный URL. Попробуйте открыть ссылку еще раз."
             )
+            return
+        }
+
+        BrowserSelectorDiagnostics.record("apple-event-url \(BrowserSelectorDiagnostics.describe(url: url))")
+        routeIncomingURL(url)
+    }
+
+    private func routeIncomingURL(_ url: URL) {
+        guard BrowserSelectorConstants.isWebURL(url) else {
+            BrowserSelectorDiagnostics.record("non-web-url passthrough \(BrowserSelectorDiagnostics.describe(url: url))")
+            NSWorkspace.shared.open(url)
             return
         }
 
@@ -104,6 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func registerAsDefaultBrowser() {
         do {
             let registrationState = try registrationService.requestDefaultBrowserRegistration()
+            BrowserSelectorDiagnostics.record("default-registration result=\(registrationState)")
             menuBarController.refreshMenu()
 
             switch registrationState {
@@ -113,6 +146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 startDefaultBrowserMonitor()
             }
         } catch {
+            BrowserSelectorDiagnostics.record("default-registration error=\(error.localizedDescription)")
             menuBarController.refreshMenu()
             UserNotifier.showError(
                 title: "Не удалось назначить браузер по умолчанию",
@@ -194,6 +228,37 @@ extension AppDelegate: MenuBarControllerDelegate {
         }
 
         dispatchCoordinator.handle(url: url)
+    }
+
+    func menuBarControllerDidRequestSystemLinkTest(_ controller: MenuBarController) {
+        guard let url = URL(string: "https://browser-selector.local/system-link-test") else {
+            return
+        }
+
+        BrowserSelectorDiagnostics.record("system-link-test \(BrowserSelectorDiagnostics.describe(url: url))")
+        NSWorkspace.shared.open(url)
+    }
+
+    func menuBarControllerDidRequestDiagnostics(_ controller: MenuBarController) {
+        let schemeHandlers = BrowserSelectorConstants.webURLSchemes.map { scheme in
+            "\(scheme)=\(registrationService.defaultHandler(forURLScheme: scheme) ?? "nil")"
+        }
+        let contentTypeHandlers = BrowserSelectorConstants.webContentTypes.map { contentType in
+            "\(contentType)=\(registrationService.defaultHandler(forContentType: contentType) ?? "nil")"
+        }
+        let recentLogLines = BrowserSelectorDiagnostics.recentLines(limit: 12)
+        let messageParts = [
+            "Bundle: \(AppMetadata.bundleIdentifier ?? "nil")",
+            "App: \(Bundle.main.bundleURL.path)",
+            "Handlers: \((schemeHandlers + contentTypeHandlers).joined(separator: ", "))",
+            "Log: \(BrowserSelectorDiagnostics.logFileURL.path)",
+            recentLogLines.isEmpty ? "Recent log: empty" : "Recent log:\n\(recentLogLines.joined(separator: "\n"))"
+        ]
+
+        UserNotifier.showInfo(
+            title: "Browser Selector Diagnostics",
+            message: messageParts.joined(separator: "\n\n")
+        )
     }
 
     func menuBarControllerDidRequestAbout(_ controller: MenuBarController) {

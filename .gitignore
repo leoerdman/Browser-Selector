@@ -6,15 +6,23 @@ Icon?
 
 # Swift Package Manager
 /.build/
+/.swiftpm/
 /Packages/
 Package.resolved
 
 # Xcode
 DerivedData/
+*.xcresult
 *.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
 *.xcuserstate
 *.xcscmblueprint
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
 
 # Generated app artifacts
 /dist/
