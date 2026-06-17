@@ -27,7 +27,7 @@
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/UltraDeepAutomation/browser-selector/main/Scripts/install_latest.sh)"
 ```
 
-Скрипт скачивает последний GitHub Release `BrowserSelector.zip`, проверяет `BrowserSelector.zip.sha256`, устанавливает приложение в `~/Applications/Browser Selector.app`, регистрирует bundle в LaunchServices, назначает Browser Selector обработчиком `http`, `https` и `public.html`, затем запускает menu bar приложение.
+Скрипт скачивает последний GitHub Release `BrowserSelector.zip`, проверяет `BrowserSelector.zip.sha256`, устанавливает приложение в `~/Applications/Browser Selector.app`, регистрирует bundle в LaunchServices, назначает Browser Selector обработчиком `http`, `https` и `public.html`, при необходимости ждет системное подтверждение macOS, затем запускает menu bar приложение.
 
 Для установки конкретной версии:
 
@@ -112,8 +112,8 @@ xcrun swiftc Scripts/set_default_browser.swift -o .build/install-tools/set-defau
 - Пункт `Показать диагностику` показывает текущий bundle, handlers, путь к diagnostics log и последние строки лога.
 - В menu bar есть `Запоминать выбранный браузер`. Если включить его, следующий выбранный браузер станет строкой `Браузер по умолчанию: X`.
 - В menu bar есть список найденных браузеров с галочками: отмеченные показываются в chooser, снятые скрываются.
-- В chooser можно нажать правой кнопкой по браузеру и выбрать `Hide`, чтобы скрыть его из текущего и будущих окон выбора.
-- В том же контекстном меню есть `Rename`: пользовательское имя сохраняется локально и показывается в chooser и menu bar.
+- В chooser можно нажать правой кнопкой по браузеру и выбрать `Скрыть`, чтобы скрыть его из текущего и будущих окон выбора.
+- В том же контекстном меню есть `Переименовать`: пользовательское имя сохраняется локально и показывается в chooser и menu bar.
 - Статистика успешных открытий остается главным источником порядка: чаще используемые браузеры идут левее; запомненный браузер используется как tie-breaker при равной статистике.
 - Menu bar показывает текущий запомненный браузер и позволяет сбросить его через `Сбросить запомненный браузер`.
 

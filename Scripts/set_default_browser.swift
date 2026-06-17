@@ -159,6 +159,7 @@ let bundleIdentifier = CommandLine.arguments[1]
 let infoPlistURL = URL(fileURLWithPath: CommandLine.arguments[2])
 let schemes = loadWebURLSchemes(from: infoPlistURL)
 let contentTypes = loadWebContentTypes(from: infoPlistURL)
+var requestedSystemConfirmation = false
 
 for scheme in schemes {
     let status = LSSetDefaultHandlerForURLScheme(
@@ -166,7 +167,12 @@ for scheme in schemes {
         bundleIdentifier as NSString
     )
 
-    guard status == noErr || status == -54 else {
+    if status == -54 {
+        requestedSystemConfirmation = true
+        continue
+    }
+
+    guard status == noErr else {
         fail("LaunchServices returned \(status) while setting \(scheme) handler.")
     }
 }
@@ -178,32 +184,54 @@ for contentType in contentTypes {
         bundleIdentifier as NSString
     )
 
+    if status == -54 {
+        requestedSystemConfirmation = true
+        continue
+    }
+
     guard status == noErr else {
         fail("LaunchServices returned \(status) while setting \(contentType) viewer.")
     }
 }
 
-var mismatches: [String] = []
-for scheme in schemes {
-    let actualHandler = defaultHandlerBundleIdentifier(for: scheme)
+func currentDefaultHandlerMismatches() -> [String] {
+    var mismatches: [String] = []
+    for scheme in schemes {
+        let actualHandler = defaultHandlerBundleIdentifier(for: scheme)
 
-    guard actualHandler == bundleIdentifier else {
-        mismatches.append("\(scheme)=\(actualHandler ?? "nil")")
-        continue
+        guard actualHandler == bundleIdentifier else {
+            mismatches.append("\(scheme)=\(actualHandler ?? "nil")")
+            continue
+        }
     }
+
+    for contentType in contentTypes {
+        let actualHandler = defaultRoleHandlerBundleIdentifier(for: contentType)
+
+        guard actualHandler == bundleIdentifier else {
+            mismatches.append("\(contentType)=\(actualHandler ?? "nil")")
+            continue
+        }
+    }
+
+    return mismatches
 }
 
-for contentType in contentTypes {
-    let actualHandler = defaultRoleHandlerBundleIdentifier(for: contentType)
-
-    guard actualHandler == bundleIdentifier else {
-        mismatches.append("\(contentType)=\(actualHandler ?? "nil")")
-        continue
+var mismatches = currentDefaultHandlerMismatches()
+if requestedSystemConfirmation {
+    let deadline = Date().addingTimeInterval(120)
+    while !mismatches.isEmpty && Date() < deadline {
+        Thread.sleep(forTimeInterval: 1)
+        mismatches = currentDefaultHandlerMismatches()
     }
 }
 
 guard mismatches.isEmpty else {
-    fail("Default browser was not applied: \(mismatches.joined(separator: ", ")).")
+    if requestedSystemConfirmation {
+        fail("Default browser confirmation was not applied before timeout: \(mismatches.joined(separator: ", ")).")
+    } else {
+        fail("Default browser was not applied: \(mismatches.joined(separator: ", ")).")
+    }
 }
 
 let handledTypes = (schemes + contentTypes).joined(separator: ", ")

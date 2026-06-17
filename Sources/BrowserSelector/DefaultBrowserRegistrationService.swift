@@ -62,7 +62,7 @@ final class DefaultBrowserRegistrationService {
             )
 
             if status == promptPendingStatus {
-                return .requestedSystemConfirmation
+                continue
             }
 
             guard status == noErr else {
@@ -84,6 +84,10 @@ final class DefaultBrowserRegistrationService {
                 activeBundleIdentifier as CFString
             )
 
+            if status == promptPendingStatus {
+                continue
+            }
+
             guard status == noErr else {
                 throw DefaultBrowserRegistrationError.launchServicesFailure(
                     scheme: contentType,
@@ -92,7 +96,11 @@ final class DefaultBrowserRegistrationService {
             }
         }
 
-        return isDefaultBrowser ? .alreadyDefault : .requestedSystemConfirmation
+        if isDefaultBrowser {
+            return .alreadyDefault
+        }
+
+        return .requestedSystemConfirmation
     }
 
     func defaultHandler(forURLScheme scheme: String) -> String? {

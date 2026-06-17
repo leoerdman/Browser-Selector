@@ -136,8 +136,8 @@ final class BrowserTileButton: NSControl {
     func updateDisplayName(_ displayName: String) {
         nameLabel.stringValue = displayName
         toolTip = displayName == browser.displayName ? displayName : "\(displayName) (\(browser.displayName))"
-        setAccessibilityLabel("Open in \(displayName)")
-        setAccessibilityHelp("Opens the current link in \(displayName).")
+        setAccessibilityLabel("Открыть в \(displayName)")
+        setAccessibilityHelp("Открывает текущую ссылку в \(displayName).")
     }
 
     private func updateAppearance() {

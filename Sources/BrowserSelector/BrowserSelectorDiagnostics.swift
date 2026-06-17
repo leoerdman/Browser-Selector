@@ -2,6 +2,13 @@ import Foundation
 
 enum BrowserSelectorDiagnostics {
     private static let lock = NSLock()
+    private static let timestampFormatterLock = NSLock()
+    private static let timestampFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    private static let recentLogReadByteLimit: UInt64 = 64 * 1024
 
     static var logFileURL: URL {
         applicationSupportDirectory.appendingPathComponent("diagnostics.log")
@@ -55,12 +62,35 @@ enum BrowserSelectorDiagnostics {
     }
 
     static func recentLines(limit: Int = 20) -> [String] {
-        guard let data = try? Data(contentsOf: logFileURL),
-              let text = String(data: data, encoding: .utf8)
-        else {
+        guard limit > 0 else {
             return []
         }
 
+        lock.lock()
+        defer {
+            lock.unlock()
+        }
+
+        var data: Data
+        do {
+            let fileHandle = try FileHandle(forReadingFrom: logFileURL)
+            defer {
+                try? fileHandle.close()
+            }
+
+            let fileSize = try fileHandle.seekToEnd()
+            let readSize = min(fileSize, recentLogReadByteLimit)
+            try fileHandle.seek(toOffset: fileSize - readSize)
+            data = try fileHandle.readToEnd() ?? Data()
+            if readSize < fileSize,
+               let firstLineBreak = data.firstIndex(of: 0x0A) {
+                data.removeSubrange(data.startIndex...firstLineBreak)
+            }
+        } catch {
+            return []
+        }
+
+        let text = String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
         return text
             .split(separator: "\n", omittingEmptySubsequences: true)
             .suffix(limit)
@@ -68,15 +98,22 @@ enum BrowserSelectorDiagnostics {
     }
 
     private static var applicationSupportDirectory: URL {
-        FileManager.default.urls(
+        let applicationSupportDirectory = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
-        )[0].appendingPathComponent("Browser Selector", isDirectory: true)
+        ).first ?? URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("Library/Application Support", isDirectory: true)
+
+        return applicationSupportDirectory
+            .appendingPathComponent("Browser Selector", isDirectory: true)
     }
 
     private static func timestamp() -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: Date())
+        timestampFormatterLock.lock()
+        defer {
+            timestampFormatterLock.unlock()
+        }
+
+        return timestampFormatter.string(from: Date())
     }
 }

@@ -257,7 +257,7 @@ final class BrowserChoiceWindowController: NSWindowController {
         let menu = NSMenu()
 
         let renameItem = NSMenuItem(
-            title: "Rename",
+            title: "Переименовать",
             action: #selector(renameBrowser(_:)),
             keyEquivalent: ""
         )
@@ -266,7 +266,7 @@ final class BrowserChoiceWindowController: NSWindowController {
         menu.addItem(renameItem)
 
         let hideItem = NSMenuItem(
-            title: "Hide",
+            title: "Скрыть",
             action: #selector(hideBrowser(_:)),
             keyEquivalent: ""
         )
@@ -433,10 +433,10 @@ final class BrowserChoiceWindowController: NSWindowController {
 
         let alert = NSAlert()
         alert.alertStyle = .informational
-        alert.messageText = "Rename Browser"
-        alert.informativeText = "Set a custom name for \(browser.displayName). Leave it empty to use the original name."
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = "Переименовать браузер"
+        alert.informativeText = "Задайте короткое имя для \(browser.displayName). Оставьте поле пустым, чтобы вернуть исходное имя."
+        alert.addButton(withTitle: "Сохранить")
+        alert.addButton(withTitle: "Отмена")
 
         let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
         textField.stringValue = preferences.customBrowserDisplayName(for: browser.bundleIdentifier) ?? browser.shortDisplayName

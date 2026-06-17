@@ -186,11 +186,15 @@ final class Preferences {
     }
 
     private var customBrowserDisplayNames: [String: String] {
-        guard let dictionary = userDefaults.dictionary(forKey: Key.customBrowserDisplayNames.rawValue) as? [String: String] else {
-            return [:]
-        }
+        Self.normalizedCustomDisplayNames(from: rawCustomBrowserDisplayNames)
+    }
 
-        return dictionary.reduce(into: [String: String]()) { result, element in
+    private var rawCustomBrowserDisplayNames: [String: String] {
+        userDefaults.dictionary(forKey: Key.customBrowserDisplayNames.rawValue) as? [String: String] ?? [:]
+    }
+
+    private static func normalizedCustomDisplayNames(from displayNames: [String: String]) -> [String: String] {
+        displayNames.reduce(into: [String: String]()) { result, element in
             guard !element.key.isEmpty,
                   element.key.rangeOfCharacter(from: CharacterSet(charactersIn: "\t\r\n")) == nil,
                   let displayName = Self.normalizedCustomDisplayName(element.value)
@@ -206,7 +210,7 @@ final class Preferences {
         let displayNames = customBrowserDisplayNames
         let reconciledDisplayNames = displayNames.filter { availableBundleIdentifiers.contains($0.key) }
 
-        guard reconciledDisplayNames != displayNames else {
+        guard reconciledDisplayNames != rawCustomBrowserDisplayNames else {
             return
         }
 
@@ -214,18 +218,9 @@ final class Preferences {
     }
 
     private func setCustomBrowserDisplayNames(_ displayNames: [String: String]) {
-        let normalizedDisplayNames = displayNames.reduce(into: [String: String]()) { result, element in
-            guard !element.key.isEmpty,
-                  element.key.rangeOfCharacter(from: CharacterSet(charactersIn: "\t\r\n")) == nil,
-                  let displayName = Self.normalizedCustomDisplayName(element.value)
-            else {
-                return
-            }
+        let normalizedDisplayNames = Self.normalizedCustomDisplayNames(from: displayNames)
 
-            result[element.key] = displayName
-        }
-
-        guard normalizedDisplayNames != customBrowserDisplayNames else {
+        guard normalizedDisplayNames != rawCustomBrowserDisplayNames else {
             return
         }
 

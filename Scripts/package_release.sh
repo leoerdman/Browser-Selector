@@ -62,6 +62,23 @@ if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${APP_DIR}/Cont
     exit 1
 fi
 
+assert_architectures() {
+    local binary_path="$1"
+    local label="$2"
+    local actual_archs
+
+    actual_archs="$(lipo -archs "${binary_path}")"
+    for arch in ${RELEASE_ARCHS}; do
+        if [[ " ${actual_archs} " != *" ${arch} "* ]]; then
+            echo "${label} is missing required architecture ${arch}; actual: ${actual_archs}" >&2
+            exit 1
+        fi
+    done
+}
+
+assert_architectures "${APP_DIR}/Contents/MacOS/${BINARY_NAME}" "Release app"
+assert_architectures "${HELPER_UNIVERSAL}" "Release helper"
+
 mkdir -p "${PACKAGE_STAGING}"
 ditto "${APP_DIR}" "${PACKAGE_STAGING}/${APP_NAME}.app"
 cp "${HELPER_UNIVERSAL}" "${PACKAGE_STAGING}/${HELPER_NAME}"

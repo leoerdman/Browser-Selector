@@ -46,6 +46,9 @@ fi
 TMP_DIR="$(mktemp -d)"
 cleanup() {
     rm -rf "${TMP_DIR}"
+    if [[ -n "${INSTALL_STAGING_APP:-}" && -d "${INSTALL_STAGING_APP}" ]]; then
+        rm -rf "${INSTALL_STAGING_APP}"
+    fi
 }
 trap cleanup EXIT
 
@@ -92,6 +95,8 @@ plutil -lint "${SOURCE_INFO_PLIST}" >/dev/null
 
 BUNDLE_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${SOURCE_INFO_PLIST}")"
 BUNDLE_EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${SOURCE_INFO_PLIST}")"
+TARGET_EXECUTABLE="${TARGET_APP}/Contents/MacOS/${BUNDLE_EXECUTABLE}"
+INSTALL_STAGING_APP="${INSTALL_DIR}/.${APP_NAME}.installing"
 
 if [[ "${BUNDLE_IDENTIFIER}" != "com.leoerdman.BrowserSelector" ]]; then
     echo "Unexpected bundle identifier: ${BUNDLE_IDENTIFIER}" >&2
@@ -103,32 +108,82 @@ if [[ "$(/usr/libexec/PlistBuddy -c 'Print :LSUIElement' "${SOURCE_INFO_PLIST}")
     exit 65
 fi
 
+if [[ ! -x "${SOURCE_APP}/Contents/MacOS/${BUNDLE_EXECUTABLE}" ]]; then
+    echo "Release app does not contain executable ${BUNDLE_EXECUTABLE}." >&2
+    exit 65
+fi
+
+codesign --verify --deep --strict --verbose=2 "${SOURCE_APP}" >/dev/null
+codesign --verify --strict --verbose=2 "${HELPER}" >/dev/null
+
 mkdir -p "${INSTALL_DIR}"
 
-if /usr/bin/pgrep -x "${BUNDLE_EXECUTABLE}" >/dev/null 2>&1; then
-    /usr/bin/pkill -TERM -x "${BUNDLE_EXECUTABLE}" >/dev/null 2>&1 || true
+running_target_pids() {
+    local pid
+    local command_path
+
+    /usr/bin/pgrep -x "${BUNDLE_EXECUTABLE}" 2>/dev/null | while IFS= read -r pid; do
+        command_path="$(/bin/ps -p "${pid}" -o comm= 2>/dev/null || true)"
+        if [[ "${command_path}" == "${TARGET_EXECUTABLE}" ]]; then
+            printf '%s\n' "${pid}"
+        fi
+    done
+}
+
+is_target_app_running() {
+    [[ -n "$(running_target_pids)" ]]
+}
+
+terminate_target_app() {
+    local pid
+    local pids
+
+    pids="$(running_target_pids)"
+    [[ -z "${pids}" ]] && return 0
+
+    while IFS= read -r pid; do
+        kill -TERM "${pid}" >/dev/null 2>&1 || true
+    done <<< "${pids}"
+
     for _ in {1..50}; do
-        /usr/bin/pgrep -x "${BUNDLE_EXECUTABLE}" >/dev/null 2>&1 || break
+        is_target_app_running || return 0
         sleep 0.1
     done
 
-    if /usr/bin/pgrep -x "${BUNDLE_EXECUTABLE}" >/dev/null 2>&1; then
-        /usr/bin/pkill -KILL -x "${BUNDLE_EXECUTABLE}" >/dev/null 2>&1 || true
-    fi
-fi
+    pids="$(running_target_pids)"
+    while IFS= read -r pid; do
+        kill -KILL "${pid}" >/dev/null 2>&1 || true
+    done <<< "${pids}"
+
+    for _ in {1..20}; do
+        is_target_app_running || return 0
+        sleep 0.1
+    done
+
+    echo "Unable to stop running app at ${TARGET_EXECUTABLE}." >&2
+    return 1
+}
+
+terminate_target_app
 
 if [[ -x "${LSREGISTER}" ]]; then
     "${LSREGISTER}" -u "${TARGET_APP}" >/dev/null 2>&1 || true
 fi
 
+rm -rf "${INSTALL_STAGING_APP}"
+ditto "${SOURCE_APP}" "${INSTALL_STAGING_APP}"
+codesign --verify --deep --strict --verbose=2 "${INSTALL_STAGING_APP}" >/dev/null
+
 rm -rf "${TARGET_APP}"
-ditto "${SOURCE_APP}" "${TARGET_APP}"
+mv "${INSTALL_STAGING_APP}" "${TARGET_APP}"
 
 INSTALLED_INFO_PLIST="${TARGET_APP}/Contents/Info.plist"
 
 if command -v xattr >/dev/null 2>&1; then
     xattr -dr com.apple.quarantine "${TARGET_APP}" >/dev/null 2>&1 || true
 fi
+
+codesign --verify --deep --strict --verbose=2 "${TARGET_APP}" >/dev/null
 
 if [[ -x "${LSREGISTER}" ]]; then
     "${LSREGISTER}" -f "${TARGET_APP}" >/dev/null
@@ -139,13 +194,13 @@ fi
 launch_installed_app() {
     open -n "${TARGET_APP}"
     for _ in {1..30}; do
-        /usr/bin/pgrep -x "${BUNDLE_EXECUTABLE}" >/dev/null 2>&1 && return 0
+        is_target_app_running && return 0
         sleep 0.1
     done
 
     "${TARGET_APP}/Contents/MacOS/${BUNDLE_EXECUTABLE}" >/dev/null 2>&1 &
     for _ in {1..30}; do
-        /usr/bin/pgrep -x "${BUNDLE_EXECUTABLE}" >/dev/null 2>&1 && return 0
+        is_target_app_running && return 0
         sleep 0.1
     done
 

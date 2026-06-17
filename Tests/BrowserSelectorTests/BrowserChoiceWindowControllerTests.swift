@@ -184,8 +184,8 @@ final class BrowserChoiceWindowControllerTests: XCTestCase {
                 in: controller,
                 bundleIdentifier: "com.google.Chrome"
             )
-            guard let hideItem = chromeButton?.menu?.items.first(where: { $0.title == "Hide" }) else {
-                XCTFail("Expected browser tile context menu to contain Hide.")
+            guard let hideItem = chromeButton?.menu?.items.first(where: { $0.title == "Скрыть" }) else {
+                XCTFail("Expected browser tile context menu to contain Скрыть.")
                 return
             }
 
@@ -235,7 +235,7 @@ final class BrowserChoiceWindowControllerTests: XCTestCase {
                     in: controller,
                     bundleIdentifier: "com.google.Chrome"
                   ),
-                  let hideItem = chromeButton.menu?.items.first(where: { $0.title == "Hide" }),
+                  let hideItem = chromeButton.menu?.items.first(where: { $0.title == "Скрыть" }),
                   let hideAction = hideItem.action
             else {
                 XCTFail("Expected chooser window and Chrome Hide item.")
@@ -285,8 +285,8 @@ final class BrowserChoiceWindowControllerTests: XCTestCase {
                 bundleIdentifier: "com.apple.Safari"
             )
 
-            XCTAssertEqual(safariButton?.menu?.items.first?.title, "Rename")
-            XCTAssertEqual(safariButton?.menu?.items.dropFirst().first?.title, "Hide")
+            XCTAssertEqual(safariButton?.menu?.items.first?.title, "Переименовать")
+            XCTAssertEqual(safariButton?.menu?.items.dropFirst().first?.title, "Скрыть")
         }
     }
 
@@ -304,8 +304,8 @@ final class BrowserChoiceWindowControllerTests: XCTestCase {
                 in: controller,
                 bundleIdentifier: "com.apple.Safari"
             )
-            guard let hideItem = safariButton?.menu?.items.first(where: { $0.title == "Hide" }) else {
-                XCTFail("Expected browser tile context menu to contain Hide.")
+            guard let hideItem = safariButton?.menu?.items.first(where: { $0.title == "Скрыть" }) else {
+                XCTFail("Expected browser tile context menu to contain Скрыть.")
                 return
             }
 

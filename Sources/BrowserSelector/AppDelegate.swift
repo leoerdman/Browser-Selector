@@ -94,12 +94,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func routeIncomingURL(_ url: URL) {
         guard BrowserSelectorConstants.isWebURL(url) else {
-            BrowserSelectorDiagnostics.record("non-web-url passthrough \(BrowserSelectorDiagnostics.describe(url: url))")
-            NSWorkspace.shared.open(url)
+            routeNonWebURL(url)
             return
         }
 
         dispatchCoordinator.handle(url: url)
+    }
+
+    private func routeNonWebURL(_ url: URL) {
+        let targetBundleIdentifier = NSWorkspace.shared.urlForApplication(toOpen: url)
+            .flatMap { Bundle(url: $0)?.bundleIdentifier }
+
+        guard targetBundleIdentifier != AppMetadata.bundleIdentifier else {
+            BrowserSelectorDiagnostics.record("non-web-url blocked-self-loop \(BrowserSelectorDiagnostics.describe(url: url))")
+            UserNotifier.showError(
+                title: "Неподдерживаемая ссылка",
+                message: "Browser Selector получил ссылку, которую macOS снова пытается открыть через Browser Selector: \(BrowserSelectorDiagnostics.describe(url: url))"
+            )
+            return
+        }
+
+        BrowserSelectorDiagnostics.record("non-web-url passthrough \(BrowserSelectorDiagnostics.describe(url: url))")
+        NSWorkspace.shared.open(url)
     }
 
     private func showDefaultBrowserPromptIfNeeded() {
@@ -112,8 +128,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menuBarController.refreshMenu()
             return
         }
-
-        preferences.didShowDefaultBrowserPrompt = true
 
         let alert = NSAlert()
         alert.alertStyle = .informational
@@ -130,6 +144,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        preferences.didShowDefaultBrowserPrompt = true
         registerAsDefaultBrowser()
     }
 

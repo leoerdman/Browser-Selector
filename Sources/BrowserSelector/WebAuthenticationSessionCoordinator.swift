@@ -95,6 +95,7 @@ private final class WebAuthenticationSessionWindowController: NSWindowController
         static let minimumWindowSize = NSSize(width: 720, height: 520)
         static let toolbarHeight: CGFloat = 44
         static let controlSize = NSSize(width: 28, height: 28)
+        static let maximumWebContentProcessReloads = 1
     }
 
     private let authenticationRequest: ASWebAuthenticationSessionRequest
@@ -105,6 +106,7 @@ private final class WebAuthenticationSessionWindowController: NSWindowController
     private let reloadButton = NSButton()
     private let cancelButton = NSButton()
     private var didFinishSession = false
+    private var webContentProcessReloadCount = 0
 
     init(
         request: ASWebAuthenticationSessionRequest,
@@ -360,7 +362,15 @@ extension WebAuthenticationSessionWindowController: WKNavigationDelegate {
             BrowserSelectorDiagnostics.record(
                 "auth-session external-url uuid=\(authenticationRequest.uuid.uuidString) url=\(BrowserSelectorDiagnostics.describe(url: url))"
             )
-            NSWorkspace.shared.open(url)
+            let targetBundleIdentifier = NSWorkspace.shared.urlForApplication(toOpen: url)
+                .flatMap { Bundle(url: $0)?.bundleIdentifier }
+            if targetBundleIdentifier == AppMetadata.bundleIdentifier {
+                BrowserSelectorDiagnostics.record(
+                    "auth-session external-url blocked-self-loop uuid=\(authenticationRequest.uuid.uuidString) url=\(BrowserSelectorDiagnostics.describe(url: url))"
+                )
+            } else {
+                NSWorkspace.shared.open(url)
+            }
             decisionHandler(.cancel)
             return
         }
@@ -378,6 +388,7 @@ extension WebAuthenticationSessionWindowController: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        webContentProcessReloadCount = 0
         progressIndicator.stopAnimation(nil)
     }
 
@@ -403,6 +414,15 @@ extension WebAuthenticationSessionWindowController: WKNavigationDelegate {
         BrowserSelectorDiagnostics.record(
             "auth-session web-content-process-terminated uuid=\(authenticationRequest.uuid.uuidString)"
         )
+        guard webContentProcessReloadCount < Layout.maximumWebContentProcessReloads else {
+            BrowserSelectorDiagnostics.record(
+                "auth-session web-content-process-reload-limit uuid=\(authenticationRequest.uuid.uuidString)"
+            )
+            cancelSession()
+            return
+        }
+
+        webContentProcessReloadCount += 1
         webView.reload()
     }
 

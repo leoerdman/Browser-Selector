@@ -17,20 +17,22 @@ enum BrowserUsageStoreError: LocalizedError {
 final class BrowserUsageStore {
     static let shared = BrowserUsageStore(fileURL: defaultFileURL())
 
+    private static let queueIdentityKey = DispatchSpecificKey<UUID>()
+
     private let fileURL: URL
     private let queue = DispatchQueue(label: "com.leoerdman.BrowserSelector.browserUsageStore")
+    private let queueIdentity = UUID()
 
     init(fileURL: URL) {
         self.fileURL = fileURL
+        queue.setSpecific(key: Self.queueIdentityKey, value: queueIdentity)
     }
 
     func rankedBrowsers(
         _ browsers: [Browser],
         preferredBundleIdentifier: String? = nil
     ) -> [Browser] {
-        let usageCounts = queue.sync {
-            (try? loadUsageCounts()) ?? [:]
-        }
+        let usageCounts = loadUsageCountsForRead()
         let originalIndices = Dictionary(
             uniqueKeysWithValues: browsers.enumerated().map { ($0.element.bundleIdentifier, $0.offset) }
         )
@@ -58,7 +60,7 @@ final class BrowserUsageStore {
     }
 
     func recordUse(bundleIdentifier: String) throws {
-        try queue.sync {
+        try syncOnQueue {
             guard Self.isValidStorageKey(bundleIdentifier) else {
                 throw BrowserUsageStoreError.invalidBundleIdentifier(bundleIdentifier)
             }
@@ -75,9 +77,26 @@ final class BrowserUsageStore {
     }
 
     func usageCount(for bundleIdentifier: String) -> Int {
-        queue.sync {
-            ((try? loadUsageCounts()) ?? [:])[bundleIdentifier] ?? 0
+        loadUsageCountsForRead()[bundleIdentifier] ?? 0
+    }
+
+    private func loadUsageCountsForRead() -> [String: Int] {
+        do {
+            return try syncOnQueue {
+                try loadUsageCounts()
+            }
+        } catch {
+            BrowserSelectorDiagnostics.record("usage-store-read-failed path=\(fileURL.path) error=\(error.localizedDescription)")
+            return [:]
         }
+    }
+
+    private func syncOnQueue<T>(_ work: () throws -> T) throws -> T {
+        if DispatchQueue.getSpecific(key: Self.queueIdentityKey) == queueIdentity {
+            return try work()
+        }
+
+        return try queue.sync(execute: work)
     }
 
     private func loadUsageCounts() throws -> [String: Int] {

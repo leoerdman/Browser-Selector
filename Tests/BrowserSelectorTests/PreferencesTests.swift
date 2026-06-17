@@ -176,6 +176,31 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(preferences.customBrowserDisplayName(for: "com.google.Chrome"), "Work Chrome")
     }
 
+    func testReconcileRememberedBrowserCanonicalizesRawCustomDisplayNameStorage() {
+        let suiteName = UUID().uuidString
+        let userDefaults = UserDefaults(suiteName: suiteName)!
+        userDefaults.set(
+            [
+                "": "Invalid",
+                "bad\nkey": "Invalid",
+                "com.google.Chrome": "  Work\nChrome  ",
+                "org.mozilla.firefox": "   "
+            ],
+            forKey: "customBrowserDisplayNames"
+        )
+        let preferences = Preferences(userDefaults: userDefaults)
+
+        preferences.reconcileRememberedBrowser(
+            availableBundleIdentifiers: ["com.google.Chrome"]
+        )
+
+        XCTAssertEqual(preferences.customBrowserDisplayName(for: "com.google.Chrome"), "Work Chrome")
+        XCTAssertEqual(
+            userDefaults.dictionary(forKey: "customBrowserDisplayNames") as? [String: String],
+            ["com.google.Chrome": "Work Chrome"]
+        )
+    }
+
     func testReconcileRememberedBrowserRemovesCustomNamesForBrowsersThatAreNoLongerInstalled() {
         let preferences = makePreferences()
         preferences.setCustomBrowserDisplayName(bundleIdentifier: "com.google.Chrome", displayName: "Work")
