@@ -8,7 +8,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let browserLauncher = BrowserLauncher()
     private let browserUsageStore = BrowserUsageStore.shared
     private let registrationService = DefaultBrowserRegistrationService()
-    private let webAuthenticationSessionCoordinator = WebAuthenticationSessionCoordinator()
 
     private lazy var dispatchCoordinator = URLDispatchCoordinator(
         browserRepository: browserRepository,
@@ -16,6 +15,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         browserUsageStore: browserUsageStore,
         preferences: preferences
     )
+
+    private lazy var webAuthenticationSessionCoordinator = WebAuthenticationSessionCoordinator()
 
     private lazy var menuBarController = MenuBarController(
         registrationService: registrationService,
@@ -25,10 +26,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var defaultBrowserMonitor: DispatchSourceTimer?
     private var defaultBrowserMonitorAttempts = 0
-    private var wasLaunchedByAuthenticationServices = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        wasLaunchedByAuthenticationServices = webAuthenticationSessionCoordinator.install()
+        _ = webAuthenticationSessionCoordinator.install()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -50,12 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
 
-            if wasLaunchedByAuthenticationServices {
-                BrowserSelectorDiagnostics.record("default-browser-prompt skipped reason=authentication-services-launch")
-                self.menuBarController.refreshMenu()
-            } else {
-                self.showDefaultBrowserPromptIfNeeded()
-            }
+            self.showDefaultBrowserPromptIfNeeded()
         }
     }
 
@@ -98,6 +93,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        if AuthFlowClassifier.isAuthenticationFlow(url) {
+            BrowserSelectorDiagnostics.record("auth-flow-passthrough \(BrowserSelectorDiagnostics.describe(url: url))")
+            dispatchCoordinator.handleAuthenticationPassthrough(url: url)
+            return
+        }
+
         dispatchCoordinator.handle(url: url)
     }
 
@@ -126,6 +127,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         guard !preferences.didShowDefaultBrowserPrompt else {
             menuBarController.refreshMenu()
+            return
+        }
+
+        guard !dispatchCoordinator.hasPendingURLs else {
+            BrowserSelectorDiagnostics.record("default-browser-prompt deferred due to pending URL dispatch")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.showDefaultBrowserPromptIfNeeded()
+            }
             return
         }
 

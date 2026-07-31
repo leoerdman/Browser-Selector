@@ -8,8 +8,13 @@ final class URLDispatchCoordinator {
     private let preferences: Preferences
 
     private var pendingURLs: [URL] = []
+
+    var hasPendingURLs: Bool {
+        !pendingURLs.isEmpty
+    }
     private var activeWindowController: BrowserChoiceWindowController?
     private var activeURL: URL?
+    private var authSessionCompletion: ((Bool) -> Void)?
 
     init(
         browserRepository: BrowserRepository,
@@ -23,10 +28,25 @@ final class URLDispatchCoordinator {
         self.preferences = preferences
     }
 
-    func handle(url: URL) {
+    func handle(url: URL, authSessionCompletion: ((Bool) -> Void)? = nil) {
+        self.authSessionCompletion = authSessionCompletion
         DispatchQueue.main.async {
             self.pendingURLs.append(url)
             self.presentNextURLIfNeeded()
+        }
+    }
+
+    /// Opens the URL directly in the system default browser, bypassing the
+    /// user-facing browser chooser. Used for OAuth/SSO callbacks that must
+    /// flow through a single browser context to succeed.
+    func handleAuthenticationPassthrough(url: URL) {
+        BrowserSelectorDiagnostics.record("auth-passthrough \(BrowserSelectorDiagnostics.describe(url: url))")
+        let didOpen = NSWorkspace.shared.open(url)
+        if !didOpen {
+            UserNotifier.showError(
+                title: "Не удалось открыть auth-ссылку",
+                message: "\(url.absoluteString)"
+            )
         }
     }
 
@@ -91,9 +111,13 @@ final class URLDispatchCoordinator {
 
         switch result {
         case .cancel:
+            authSessionCompletion?(false)
+            authSessionCompletion = nil
             finishActiveURL()
 
         case let .open(browser):
+            authSessionCompletion?(true)
+            authSessionCompletion = nil
             preferences.rememberBrowserChoice(bundleIdentifier: browser.bundleIdentifier)
 
             browserLauncher.open(url, in: browser) { [weak self] openResult in
