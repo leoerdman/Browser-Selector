@@ -87,6 +87,47 @@ git tag v1.0.3
 git push origin v1.0.3
 ```
 
+## macOS installer для Gumroad
+
+Для продажи как обычного macOS-приложения собирайте installer-артефакт:
+
+```bash
+xcrun notarytool store-credentials browser-selector-notary \
+  --apple-id "APPLE_ID_EMAIL" \
+  --team-id "5M3L3LU4XV" \
+  --password "APP_SPECIFIC_PASSWORD"
+```
+
+```bash
+BROWSER_SELECTOR_REQUIRE_DEVELOPER_ID=1 \
+BROWSER_SELECTOR_NOTARY_PROFILE=browser-selector-notary \
+./Scripts/package_macos_installer.sh
+```
+
+Готовые файлы:
+
+```text
+dist/installer/BrowserSelector-1.0.3.pkg
+dist/installer/BrowserSelector-1.0.3.dmg
+dist/installer/BrowserSelector-1.0.3.dmg.sha256
+```
+
+`BrowserSelector-1.0.3.pkg` устанавливает приложение в `/Applications`, регистрирует bundle в LaunchServices и запускает Browser Selector после установки. При первом запуске macOS может показать системное подтверждение назначения браузера по умолчанию - это обязательный user-consent flow macOS.
+
+Для публичной продажи вне Mac App Store нужны именно:
+
+- `Developer ID Application` для подписи `.app` и `.dmg`;
+- `Developer ID Installer` для подписи `.pkg`;
+- notarization через `xcrun notarytool` и stapled ticket для `.pkg` и `.dmg`.
+
+Локальный preview без installer-сертификата можно собрать только для внутренней проверки:
+
+```bash
+CODE_SIGN_IDENTITY="Apple Distribution: IRYNA SHAUKO (5M3L3LU4XV)" \
+BROWSER_SELECTOR_ALLOW_UNSIGNED_INSTALLER=1 \
+./Scripts/package_macos_installer.sh
+```
+
 ## Проверка
 
 ```bash

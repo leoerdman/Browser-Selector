@@ -13,6 +13,7 @@ CONTENTS_DIR="${APP_DIR}/Contents"
 RESOURCES_DIR="${CONTENTS_DIR}/Resources"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
 SIGN_IDENTITY="${CODE_SIGN_IDENTITY:-}"
+CODE_SIGN_TIMESTAMP="${CODE_SIGN_TIMESTAMP:-none}"
 MACOS_DEPLOYMENT_TARGET="${MACOS_DEPLOYMENT_TARGET:-13.0}"
 BROWSER_SELECTOR_ARCHS="${BROWSER_SELECTOR_ARCHS:-}"
 SWIFT_PACKAGE_FLAGS=()
@@ -89,7 +90,12 @@ if [[ -z "${SIGN_IDENTITY}" || "${SIGN_IDENTITY}" == "-" ]]; then
     SIGN_IDENTITY="-"
     codesign --force --deep --sign - --timestamp=none "${APP_DIR}"
 else
-    codesign --force --deep --sign "${SIGN_IDENTITY}" --options runtime --timestamp=none "${APP_DIR}"
+    CODESIGN_TIMESTAMP_FLAGS=(--timestamp=none)
+    if [[ "${CODE_SIGN_TIMESTAMP}" == "1" || "${CODE_SIGN_TIMESTAMP}" == "true" || "${CODE_SIGN_TIMESTAMP}" == "enabled" ]]; then
+        CODESIGN_TIMESTAMP_FLAGS=(--timestamp)
+    fi
+
+    codesign --force --deep --sign "${SIGN_IDENTITY}" --options runtime "${CODESIGN_TIMESTAMP_FLAGS[@]}" "${APP_DIR}"
 fi
 
 codesign --verify --deep --strict --verbose=2 "${APP_DIR}"
