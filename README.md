@@ -6,7 +6,7 @@
 
 - URL handler для `http` и `https` через `CFBundleURLTypes`.
 - Browser bundle claim для `file` URL; default handler для `file` не назначается.
-- Поддержка `ASWebAuthenticationSession`: Browser Selector объявляет capabilities браузера, принимает auth-session requests от macOS и завершает их по callback URL.
+- Поддержка `ASWebAuthenticationSession`: Browser Selector объявляет capabilities браузера. OAuth/SSO URL (`claude.com/oauth`, `accounts.google.com/o/oauth2/v2/auth` и т.п.), инициированные другими приложениями, попадают в общий browser chooserer — пользователь выбирает браузер, проходит auth flow, и macOS доставляет зарегистрированный callback в исходное приложение (`Claude.app`, `ChatGPT.app` и др.) через URL scheme этого app.
 - Получение ссылок через стандартный Apple Event `kAEGetURL`.
 - Поиск браузеров через LaunchServices, без ручных списков и костылей.
 - Минималистичный горизонтальный chooser: только браузеры и подписи, без скролла и лишнего текста.
@@ -158,7 +158,7 @@ xcrun swiftc Scripts/set_default_browser.swift -o .build/install-tools/set-defau
 - Статистика успешных открытий остается главным источником порядка: чаще используемые браузеры идут левее; запомненный браузер используется как tie-breaker при равной статистике.
 - Menu bar показывает текущий запомненный браузер и позволяет сбросить его через `Сбросить запомненный браузер`.
 
-Важно: Browser Selector перехватывает обычные `http`/`https` открытия через LaunchServices. Для системных authentication sessions, например `ChatGPT.app wants to use auth.openai.com to Sign In`, приложение регистрируется через `ASWebAuthenticationSessionWebBrowserSessionManager` и открывает отдельное auth-окно, чтобы macOS получила callback через `complete(withCallbackURL:)`.
+Важно: Browser Selector перехватывает все `http`/`https` открытия через LaunchServices, включая OAuth/SSO URL из системных authentication prompts (например `Claude.app wants to use claude.com to Sign In`). Такие URL показываются в общем browser choosere; после выбора браузера auth flow завершается в нём, а macOS возвращает callback URL в исходное приложение через его зарегистрированную URL scheme. Browser Selector намеренно не регистрируется как `ASWebAuthenticationSessionWebBrowserSessionManager.sessionHandler`, чтобы не вызывать in-process WKWebView path и не порождать фантомный chooser (известный regression после ручной отмены session).
 
 ## Требования
 

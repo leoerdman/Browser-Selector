@@ -28,12 +28,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var defaultBrowserMonitorAttempts = 0
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        BrowserSelectorDiagnostics.record(
+            "applicationWillFinishLaunching bundle=\(AppMetadata.bundleIdentifier ?? "nil")"
+        )
         _ = webAuthenticationSessionCoordinator.install()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         BrowserSelectorDiagnostics.record(
-            "launch bundle=\(AppMetadata.bundleIdentifier ?? "nil") url=\(Bundle.main.bundleURL.path)"
+            "launch bundle=\(AppMetadata.bundleIdentifier ?? "nil") url=\(Bundle.main.bundleURL.path) version=\(AppMetadata.version)"
         )
 
         NSAppleEventManager.shared().setEventHandler(
@@ -42,11 +45,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             forEventClass: AEEventClass(kInternetEventClass),
             andEventID: AEEventID(kAEGetURL)
         )
+        BrowserSelectorDiagnostics.record("apple-event-handler registered for kAEGetURL")
 
         menuBarController.install()
+        BrowserSelectorDiagnostics.record("menuBarController installed")
 
         DispatchQueue.main.async { [weak self] in
             guard let self else {
+                BrowserSelectorDiagnostics.record("launch self weaknil lost in didFinishLaunching dispatch")
                 return
             }
 
@@ -55,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        BrowserSelectorDiagnostics.record("applicationWillTerminate")
         NSAppleEventManager.shared().removeEventHandler(
             forEventClass: AEEventClass(kInternetEventClass),
             andEventID: AEEventID(kAEGetURL)
@@ -75,7 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let urlString = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
               let url = URL(string: urlString)
         else {
-            BrowserSelectorDiagnostics.record("apple-event-url invalid")
+            BrowserSelectorDiagnostics.record("apple-event-url invalid raw=\(event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue ?? "nil")")
             UserNotifier.showError(
                 title: "Не удалось прочитать ссылку",
                 message: "macOS передала некорректный URL. Попробуйте открыть ссылку еще раз."
@@ -88,23 +95,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func routeIncomingURL(_ url: URL) {
-        guard BrowserSelectorConstants.isWebURL(url) else {
+        let isWeb = BrowserSelectorConstants.isWebURL(url)
+        let isAuth = AuthFlowClassifier.isAuthenticationFlow(url)
+        BrowserSelectorDiagnostics.record(
+            "route-incoming \(BrowserSelectorDiagnostics.describe(url: url)) isWeb=\(isWeb) isAuth=\(isAuth)"
+        )
+
+        guard isWeb else {
             routeNonWebURL(url)
             return
         }
 
-        if AuthFlowClassifier.isAuthenticationFlow(url) {
-            BrowserSelectorDiagnostics.record("auth-flow-passthrough \(BrowserSelectorDiagnostics.describe(url: url))")
-            dispatchCoordinator.handleAuthenticationPassthrough(url: url)
-            return
+        if isAuth {
+            BrowserSelectorDiagnostics.record(
+                "auth-flow-detected chooser-open \(BrowserSelectorDiagnostics.describe(url: url))"
+            )
         }
 
         dispatchCoordinator.handle(url: url)
     }
 
     private func routeNonWebURL(_ url: URL) {
-        let targetBundleIdentifier = NSWorkspace.shared.urlForApplication(toOpen: url)
-            .flatMap { Bundle(url: $0)?.bundleIdentifier }
+        let targetApplicationURL = NSWorkspace.shared.urlForApplication(toOpen: url)
+        let targetBundleIdentifier = targetApplicationURL.flatMap { Bundle(url: $0)?.bundleIdentifier }
 
         guard targetBundleIdentifier != AppMetadata.bundleIdentifier else {
             BrowserSelectorDiagnostics.record("non-web-url blocked-self-loop \(BrowserSelectorDiagnostics.describe(url: url))")
@@ -115,12 +128,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        BrowserSelectorDiagnostics.record("non-web-url passthrough \(BrowserSelectorDiagnostics.describe(url: url))")
-        NSWorkspace.shared.open(url)
+        BrowserSelectorDiagnostics.record(
+            "non-web-url passthrough \(BrowserSelectorDiagnostics.describe(url: url)) target=\(targetBundleIdentifier ?? "nil")"
+        )
+        let didOpen = NSWorkspace.shared.open(url)
+        BrowserSelectorDiagnostics.record(
+            "non-web-url open-result=\(didOpen) \(BrowserSelectorDiagnostics.describe(url: url))"
+        )
     }
 
     private func showDefaultBrowserPromptIfNeeded() {
-        guard !registrationService.isDefaultBrowser else {
+        let isDefault = registrationService.isDefaultBrowser
+        BrowserSelectorDiagnostics.record(
+            "default-browser-prompt isDefault=\(isDefault) didShowPrompt=\(preferences.didShowDefaultBrowserPrompt) hasPendingURLs=\(dispatchCoordinator.hasPendingURLs)"
+        )
+
+        guard !isDefault else {
             menuBarController.refreshMenu()
             return
         }
@@ -147,6 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         NSApp.activate(ignoringOtherApps: true)
         let response = alert.runModal()
+        BrowserSelectorDiagnostics.record("default-browser-prompt response=\(response.rawValue)")
 
         guard response == .alertFirstButtonReturn else {
             menuBarController.refreshMenu()
@@ -158,6 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func registerAsDefaultBrowser() {
+        BrowserSelectorDiagnostics.record("registerAsDefaultBrowser begin")
         do {
             let registrationState = try registrationService.requestDefaultBrowserRegistration()
             BrowserSelectorDiagnostics.record("default-registration result=\(registrationState)")
@@ -182,6 +207,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startDefaultBrowserMonitor() {
         stopDefaultBrowserMonitor()
         defaultBrowserMonitorAttempts = 0
+        BrowserSelectorDiagnostics.record("default-browser-monitor start")
 
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now() + 1, repeating: 1)
@@ -194,17 +220,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func pollDefaultBrowserStatus() {
         defaultBrowserMonitorAttempts += 1
+        let isDefault = registrationService.isDefaultBrowser
+        BrowserSelectorDiagnostics.record(
+            "default-browser-monitor attempt=\(defaultBrowserMonitorAttempts) isDefault=\(isDefault)"
+        )
         menuBarController.refreshMenu()
 
-        if registrationService.isDefaultBrowser {
+        if isDefault {
             stopDefaultBrowserMonitor()
             return
         }
 
         if defaultBrowserMonitorAttempts == 3 {
+            BrowserSelectorDiagnostics.record("default-browser-monitor retry registration at attempt=3")
             do {
-                _ = try registrationService.requestDefaultBrowserRegistration()
+                let retryState = try registrationService.requestDefaultBrowserRegistration()
+                BrowserSelectorDiagnostics.record("default-browser-monitor retry result=\(retryState)")
             } catch {
+                BrowserSelectorDiagnostics.record("default-browser-monitor retry error=\(error.localizedDescription)")
                 stopDefaultBrowserMonitor()
                 UserNotifier.showError(
                     title: "Не удалось завершить назначение",
@@ -218,6 +251,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        BrowserSelectorDiagnostics.record("default-browser-monitor timeout after 20 attempts")
         stopDefaultBrowserMonitor()
         UserNotifier.showInfo(
             title: "Browser Selector не назначен",
@@ -226,6 +260,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func stopDefaultBrowserMonitor() {
+        if defaultBrowserMonitor != nil {
+            BrowserSelectorDiagnostics.record("default-browser-monitor stop")
+        }
         defaultBrowserMonitor?.cancel()
         defaultBrowserMonitor = nil
         defaultBrowserMonitorAttempts = 0
@@ -235,19 +272,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension AppDelegate: MenuBarControllerDelegate {
     func menuBarControllerDidRequestDefaultRegistration(_ controller: MenuBarController) {
+        BrowserSelectorDiagnostics.record("menu-action register-as-default requested")
         registerAsDefaultBrowser()
     }
 
     func menuBarControllerDidRequestBrowserRefresh(_ controller: MenuBarController) {
+        BrowserSelectorDiagnostics.record("menu-action refresh-browsers requested")
         menuBarController.refreshMenu()
     }
 
     func menuBarControllerDidRequestRememberedChoiceReset(_ controller: MenuBarController) {
+        BrowserSelectorDiagnostics.record("menu-action reset-remembered requested")
         preferences.resetRememberedBrowserChoice()
     }
 
     func menuBarControllerDidRequestTestOpen(_ controller: MenuBarController) {
+        BrowserSelectorDiagnostics.record("menu-action test-open requested")
         guard let url = URL(string: "https://example.com") else {
+            BrowserSelectorDiagnostics.record("menu-action test-open url-build-failed")
             return
         }
 
@@ -255,7 +297,9 @@ extension AppDelegate: MenuBarControllerDelegate {
     }
 
     func menuBarControllerDidRequestSystemLinkTest(_ controller: MenuBarController) {
+        BrowserSelectorDiagnostics.record("menu-action system-link-test requested")
         guard let url = URL(string: "https://browser-selector.local/system-link-test") else {
+            BrowserSelectorDiagnostics.record("menu-action system-link-test url-build-failed")
             return
         }
 

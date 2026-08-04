@@ -1,21 +1,26 @@
 import Foundation
 
-/// SSOT classifier for authentication-flow URLs that must bypass the browser
-/// selection UI.
+/// SSOT classifier for authentication-flow URLs.
 ///
-/// When a macOS application initiates `ASWebAuthenticationSession` (OAuth, OIDC,
-/// SAML, SSO, device-code login), the resulting `claude.com/oauth/authorize`,
+/// When a macOS application initiates `ASWebAuthenticationSession` (OAuth,
+/// OIDC, SAML, SSO, device-code login), the resulting `claude.com/.../oauth`,
 /// `accounts.google.com/o/oauth2/v2/auth`, `login.microsoftonline.com/...`,
-/// etc. URLs land in Browser Selector via `application-open-urls`. If we
-/// surface the browser-chooser for those URLs the user picks Chrome, Chrome
-/// opens the OAuth provider's authorize page, and Claude's OAuth flow
-/// collapses because the redirect target was never consumed by the originating
-/// app. Worse, macOS re-prompts the same authorize URL an hour later when the
-/// origin app retries, producing the "phantom browser chooser" bug.
+/// etc. URLs land in Browser Selector via `application-open-urls`.
 ///
-/// `AuthFlowClassifier` is the single source of truth for deciding which
-/// web URLs must be passed through to the system default browser without
-/// showing the chooser.
+/// Browser Selector deliberately routes these URLs through the same
+/// user-facing browser chooser as any other web URL. The user picks the
+/// browser (e.g. Chrome where they are already signed into Google), the OAuth
+/// provider renders the consent screen, and on success macOS delivers the
+/// registered callback URL to the originating app (Claude, ChatGPT, …)
+/// through that app's own registered URL scheme — exactly how macOS handles
+/// a "Continue with Google" flow for any non-web-browser-replacement app.
+///
+/// `AuthFlowClassifier` therefore no longer gates routing. Its only job is
+/// detection: it classifies a URL as belonging to an authentication handshake
+/// so that callers can emit a diagnostic record (e.g. "auth-flow-detected
+/// chooser-open …") for observability. Keeping a single source of truth for
+/// that classification prevents every caller from re-implementing the same
+/// OAuth/SSO heuristics.
 enum AuthFlowClassifier {
     /// Path components (case-insensitive) that strongly indicate the URL is
     /// part of an OAuth/OIDC/SAML handshake rather than user-driven browsing.
@@ -97,10 +102,12 @@ enum AuthFlowClassifier {
         "claude.com"
     ]
 
-    /// Returns `true` when the URL belongs to an authentication handshake
-    /// and Browser Selector must NOT surface the chooser for it. The URL will
-    /// be opened directly via `NSWorkspace.shared.open(_:)` so the system
-    /// hands it to the OAuth provider's registered default handler.
+    /// Returns `true` when the URL belongs to an authentication handshake.
+    /// Browser Selector no longer bypasses the chooser for such URLs: it
+    /// simply records the classification for diagnostics and surfaces the
+    /// chooser exactly as for any other web link. macOS delivers the
+    /// OAuth/SSO callback to the originating app through that app's own
+    /// registered URL scheme.
     static func isAuthenticationFlow(_ url: URL) -> Bool {
         guard BrowserSelectorConstants.isWebURL(url) else {
             return false

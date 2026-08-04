@@ -20,17 +20,25 @@ final class BrowserLauncher {
     private var activeProcesses: [UUID: Process] = [:]
 
     func open(_ url: URL, in browser: Browser, completion: @escaping (Result<Void, Error>) -> Void) {
+        BrowserSelectorDiagnostics.record(
+            "launcher-open begin \(BrowserSelectorDiagnostics.describe(url: url)) in \(browser.bundleIdentifier) chromiumLike=\(browser.usesChromiumTabModel)"
+        )
         openInExistingBrowserWindow(url, browser: browser) { [weak self] primaryResult in
             guard let self else {
+                BrowserSelectorDiagnostics.record("launcher-open self=nil after primary attempt")
                 completion(.failure(BrowserLaunchError(message: "Browser launcher was released before opening the link.")))
                 return
             }
 
             switch primaryResult {
             case .success:
+                BrowserSelectorDiagnostics.record("launcher-open primary-success \(browser.bundleIdentifier)")
                 completion(.success(()))
                 return
             case let .failure(error):
+                BrowserSelectorDiagnostics.record(
+                    "launcher-open primary-failure \(browser.bundleIdentifier) error=\(error.localizedDescription) fallback=\(Self.fallbackPolicy(for: error))"
+                )
                 switch Self.fallbackPolicy(for: error) {
                 case .allowLaunchServices:
                     break
@@ -40,18 +48,25 @@ final class BrowserLauncher {
                 }
             }
 
+            BrowserSelectorDiagnostics.record("launcher-open fallback openLocation \(browser.bundleIdentifier)")
             self.openLocation(url, browser: browser) { [weak self] openLocationResult in
                 guard let self else {
+                    BrowserSelectorDiagnostics.record("launcher-open self=nil after openLocation fallback")
                     completion(.failure(BrowserLaunchError(message: "Browser launcher was released before fallback opening the link.")))
                     return
                 }
 
                 switch openLocationResult {
                 case .success:
+                    BrowserSelectorDiagnostics.record("launcher-open openLocation-success \(browser.bundleIdentifier)")
                     completion(.success(()))
                 case let .failure(error):
+                    BrowserSelectorDiagnostics.record(
+                        "launcher-open openLocation-failure \(browser.bundleIdentifier) error=\(error.localizedDescription) fallback=\(Self.fallbackPolicy(for: error))"
+                    )
                     switch Self.fallbackPolicy(for: error) {
                     case .allowLaunchServices:
+                        BrowserSelectorDiagnostics.record("launcher-open fallback launchServices \(browser.bundleIdentifier)")
                         self.openThroughLaunchServices(url, browser: browser, completion: completion)
                     case let .requireUserAction(error):
                         completion(.failure(error))
@@ -67,10 +82,16 @@ final class BrowserLauncher {
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
         guard browser.usesChromiumTabModel else {
+            BrowserSelectorDiagnostics.record(
+                "launcher-chromium-skip non-chromium \(browser.bundleIdentifier) → openLocation"
+            )
             openLocation(url, browser: browser, completion: completion)
             return
         }
 
+        BrowserSelectorDiagnostics.record(
+            "launcher-chromium-newtab \(browser.bundleIdentifier) \(BrowserSelectorDiagnostics.describe(url: url))"
+        )
         runAppleScript(
             BrowserLaunchScriptFactory.chromiumNewTabScript(
                 bundleIdentifier: browser.bundleIdentifier,
@@ -85,6 +106,9 @@ final class BrowserLauncher {
         browser: Browser,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
+        BrowserSelectorDiagnostics.record(
+            "launcher-open-location \(browser.bundleIdentifier) \(BrowserSelectorDiagnostics.describe(url: url))"
+        )
         runAppleScript(
             BrowserLaunchScriptFactory.openLocationScript(
                 bundleIdentifier: browser.bundleIdentifier,
@@ -99,6 +123,9 @@ final class BrowserLauncher {
         browser: Browser,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
+        BrowserSelectorDiagnostics.record(
+            "launcher-launchservices \(browser.bundleIdentifier) open -b \(BrowserSelectorDiagnostics.describe(url: url))"
+        )
         runProcess(
             executableURL: URL(fileURLWithPath: "/usr/bin/open"),
             arguments: ["-b", browser.bundleIdentifier, url.absoluteString],
@@ -123,6 +150,7 @@ final class BrowserLauncher {
         timeout: TimeInterval
     ) -> Result<Void, Error> {
         guard appleScriptExecutionLimiter.wait(timeout: .now()) == .success else {
+            BrowserSelectorDiagnostics.record("applescript-skip limiter-busy")
             return .failure(
                 BrowserLaunchError(
                     message: "Предыдущий AppleScript еще не завершился; ссылка будет открыта через LaunchServices."
@@ -144,6 +172,7 @@ final class BrowserLauncher {
                 resultLock.lock()
                 result = .failure(BrowserLaunchError(message: "Не удалось подготовить AppleScript."))
                 resultLock.unlock()
+                BrowserSelectorDiagnostics.record("applescript-prepare-failed")
                 return
             }
 
@@ -153,13 +182,18 @@ final class BrowserLauncher {
             resultLock.lock()
             if let errorInfo {
                 result = .failure(BrowserLaunchError(errorInfo: errorInfo))
+                BrowserSelectorDiagnostics.record(
+                    "applescript-execute-error number=\(errorInfo[NSAppleScript.errorNumber] as? NSNumber ?? -1) message=\(errorInfo[NSAppleScript.errorMessage] as? String ?? "nil")"
+                )
             } else {
                 result = .success(())
+                BrowserSelectorDiagnostics.record("applescript-execute-success")
             }
             resultLock.unlock()
         }
 
         guard semaphore.wait(timeout: .now() + timeout) == .success else {
+            BrowserSelectorDiagnostics.record("applescript-timeout after=\(Int(timeout))s")
             return .failure(BrowserLaunchError(message: "AppleScript не ответил за \(Int(timeout)) секунд."))
         }
 
@@ -186,6 +220,10 @@ final class BrowserLauncher {
         process.standardError = standardError
         process.standardOutput = standardOutput
 
+        BrowserSelectorDiagnostics.record(
+            "process-run begin id=\(processID.uuidString) exe=\(executableURL.lastPathComponent) args=\(arguments.joined(separator: " "))"
+        )
+
         let timeoutLock = NSLock()
         var didTimeOut = false
         func markTimedOut() {
@@ -210,6 +248,7 @@ final class BrowserLauncher {
 
             markTimedOut()
             process.terminate()
+            BrowserSelectorDiagnostics.record("process-timeout id=\(processID.uuidString) terminating")
 
             DispatchQueue.global(qos: .utility).asyncAfter(
                 deadline: .now() + Timeout.processTerminationGrace
@@ -220,6 +259,7 @@ final class BrowserLauncher {
                     return
                 }
 
+                BrowserSelectorDiagnostics.record("process-forcekill id=\(processID.uuidString) SIGKILL")
                 Darwin.kill(process.processIdentifier, SIGKILL)
             }
         }
@@ -232,6 +272,10 @@ final class BrowserLauncher {
 
             DispatchQueue.main.async {
                 self?.untrackProcess(identifier: processID)
+
+                BrowserSelectorDiagnostics.record(
+                    "process-end id=\(processID.uuidString) status=\(terminatedProcess.terminationStatus) timedOut=\(timedOut) stderr=\(errorMessage) stdout=\(outputMessage)"
+                )
 
                 if terminatedProcess.terminationStatus == 0 {
                     completion(.success(()))
@@ -261,11 +305,13 @@ final class BrowserLauncher {
         do {
             trackProcess(process, identifier: processID)
             try process.run()
+            BrowserSelectorDiagnostics.record("process-started id=\(processID.uuidString) pid=\(process.processIdentifier)")
             DispatchQueue.global(qos: .utility).asyncAfter(
                 deadline: .now() + Timeout.process,
                 execute: timeoutWorkItem
             )
         } catch {
+            BrowserSelectorDiagnostics.record("process-launch-error id=\(processID.uuidString) error=\(error.localizedDescription)")
             timeoutWorkItem.cancel()
             untrackProcess(identifier: processID)
             DispatchQueue.main.async {

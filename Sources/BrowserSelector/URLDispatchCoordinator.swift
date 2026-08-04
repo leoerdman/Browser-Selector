@@ -14,7 +14,6 @@ final class URLDispatchCoordinator {
     }
     private var activeWindowController: BrowserChoiceWindowController?
     private var activeURL: URL?
-    private var authSessionCompletion: ((Bool) -> Void)?
 
     init(
         browserRepository: BrowserRepository,
@@ -28,25 +27,13 @@ final class URLDispatchCoordinator {
         self.preferences = preferences
     }
 
-    func handle(url: URL, authSessionCompletion: ((Bool) -> Void)? = nil) {
-        self.authSessionCompletion = authSessionCompletion
+    func handle(url: URL) {
         DispatchQueue.main.async {
             self.pendingURLs.append(url)
-            self.presentNextURLIfNeeded()
-        }
-    }
-
-    /// Opens the URL directly in the system default browser, bypassing the
-    /// user-facing browser chooser. Used for OAuth/SSO callbacks that must
-    /// flow through a single browser context to succeed.
-    func handleAuthenticationPassthrough(url: URL) {
-        BrowserSelectorDiagnostics.record("auth-passthrough \(BrowserSelectorDiagnostics.describe(url: url))")
-        let didOpen = NSWorkspace.shared.open(url)
-        if !didOpen {
-            UserNotifier.showError(
-                title: "Не удалось открыть auth-ссылку",
-                message: "\(url.absoluteString)"
+            BrowserSelectorDiagnostics.record(
+                "dispatch-enqueue \(BrowserSelectorDiagnostics.describe(url: url)) queueDepth=\(self.pendingURLs.count) hasActiveURL=\(self.activeURL != nil) hasActiveWindow=\(self.activeWindowController != nil)"
             )
+            self.presentNextURLIfNeeded()
         }
     }
 
@@ -55,17 +42,27 @@ final class URLDispatchCoordinator {
               activeWindowController == nil,
               !pendingURLs.isEmpty
         else {
+            BrowserSelectorDiagnostics.record(
+                "dispatch-present-skip activeURL=\(activeURL != nil) activeWindow=\(activeWindowController != nil) queueDepth=\(pendingURLs.count)"
+            )
             return
         }
 
         let url = pendingURLs.removeFirst()
         activeURL = url
+        BrowserSelectorDiagnostics.record(
+            "dispatch-present-begin \(BrowserSelectorDiagnostics.describe(url: url)) remainingQueue=\(pendingURLs.count)"
+        )
 
         let discoveredBrowsers = browserRepository.installedBrowsers()
+        BrowserSelectorDiagnostics.record(
+            "dispatch-discover-browsers count=\(discoveredBrowsers.count) ids=\(discoveredBrowsers.map(\.bundleIdentifier).joined(separator: ","))"
+        )
         preferences.reconcileRememberedBrowser(
             availableBundleIdentifiers: Set(discoveredBrowsers.map(\.bundleIdentifier))
         )
         guard !discoveredBrowsers.isEmpty else {
+            BrowserSelectorDiagnostics.record("dispatch-no-browsers-found")
             UserNotifier.showError(
                 title: "Браузеры не найдены",
                 message: "LaunchServices не вернул ни одного приложения, которое умеет открывать web-ссылки."
@@ -78,6 +75,9 @@ final class URLDispatchCoordinator {
         let visibleDiscoveredBrowsers = discoveredBrowsers.filter {
             preferences.isBrowserVisible(bundleIdentifier: $0.bundleIdentifier)
         }
+        BrowserSelectorDiagnostics.record(
+            "dispatch-visible-browsers count=\(visibleDiscoveredBrowsers.count) hidden=\(discoveredBrowsers.count - visibleDiscoveredBrowsers.count)"
+        )
         let preferredBundleIdentifier = preferences.rememberLastBrowser
             ? preferences.lastBrowserBundleIdentifier
             : nil
@@ -85,7 +85,11 @@ final class URLDispatchCoordinator {
             visibleDiscoveredBrowsers,
             preferredBundleIdentifier: preferredBundleIdentifier
         )
+        BrowserSelectorDiagnostics.record(
+            "dispatch-ranked-browsers count=\(browsers.count) order=\(browsers.map(\.bundleIdentifier).joined(separator: ",")) preferred=\(preferredBundleIdentifier ?? "nil")"
+        )
         guard !browsers.isEmpty else {
+            BrowserSelectorDiagnostics.record("dispatch-no-visible-browsers")
             UserNotifier.showError(
                 title: "Нет видимых браузеров",
                 message: "Все найденные браузеры скрыты. В menu bar включите хотя бы один браузер."
@@ -103,6 +107,7 @@ final class URLDispatchCoordinator {
         }
 
         activeWindowController = windowController
+        BrowserSelectorDiagnostics.record("dispatch-chooser-present")
         windowController.present()
     }
 
@@ -111,26 +116,33 @@ final class URLDispatchCoordinator {
 
         switch result {
         case .cancel:
-            authSessionCompletion?(false)
-            authSessionCompletion = nil
+            BrowserSelectorDiagnostics.record("chooser-cancelled \(BrowserSelectorDiagnostics.describe(url: url))")
             finishActiveURL()
 
         case let .open(browser):
-            authSessionCompletion?(true)
-            authSessionCompletion = nil
+            BrowserSelectorDiagnostics.record(
+                "chooser-opened \(BrowserSelectorDiagnostics.describe(url: url)) in \(browser.bundleIdentifier)"
+            )
             preferences.rememberBrowserChoice(bundleIdentifier: browser.bundleIdentifier)
 
             browserLauncher.open(url, in: browser) { [weak self] openResult in
                 DispatchQueue.main.async {
                     guard let self else {
+                        BrowserSelectorDiagnostics.record("dispatch-launch-callback self=nil")
                         return
                     }
 
                     switch openResult {
                     case .success:
+                        BrowserSelectorDiagnostics.record(
+                            "launch-success \(BrowserSelectorDiagnostics.describe(url: url)) in \(browser.bundleIdentifier)"
+                        )
                         self.recordBrowserUse(browser)
                         self.finishActiveURL()
                     case let .failure(error):
+                        BrowserSelectorDiagnostics.record(
+                            "launch-failure \(BrowserSelectorDiagnostics.describe(url: url)) in \(browser.bundleIdentifier) error=\(error.localizedDescription)"
+                        )
                         UserNotifier.showError(
                             title: "Не удалось открыть ссылку",
                             message: "\(browser.displayName(preferences: self.preferences)): \(error.localizedDescription)"
@@ -155,6 +167,9 @@ final class URLDispatchCoordinator {
     }
 
     private func finishActiveURL() {
+        BrowserSelectorDiagnostics.record(
+            "dispatch-finish activeURL=\(activeURL != nil) remainingQueue=\(pendingURLs.count)"
+        )
         activeURL = nil
         presentNextURLIfNeeded()
     }

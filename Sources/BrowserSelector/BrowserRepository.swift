@@ -19,13 +19,18 @@ final class BrowserRepository {
             .compactMap { URL(string: "\($0)://browser-selector.local") }
             .flatMap { workspace.urlsForApplications(toOpen: $0) }
 
+        BrowserSelectorDiagnostics.record(
+            "repository-discover rawCount=\(applicationURLs.count) schemes=\(BrowserSelectorConstants.webURLSchemes.joined(separator: ","))"
+        )
+
         var seenBundleIdentifiers = Set<String>()
 
-        return applicationURLs
+        let browsers = applicationURLs
             .compactMap { browser(forApplicationURL: $0) }
             .filter { browser in
                 let bundleIdentifier = browser.bundleIdentifier
                 guard bundleIdentifier != ownBundleIdentifier else {
+                    BrowserSelectorDiagnostics.record("repository-filter self-skip \(bundleIdentifier)")
                     return false
                 }
 
@@ -34,12 +39,18 @@ final class BrowserRepository {
             .sorted { lhs, rhs in
                 lhs.displayName.localizedStandardCompare(rhs.displayName) == .orderedAscending
             }
+
+        BrowserSelectorDiagnostics.record(
+            "repository-discover acceptedCount=\(browsers.count)"
+        )
+        return browsers
     }
 
     private func browser(forApplicationURL bundleURL: URL) -> Browser? {
         guard let bundle = Bundle(url: bundleURL),
               let bundleIdentifier = bundle.bundleIdentifier
         else {
+            BrowserSelectorDiagnostics.record("repository-skip no-bundle-or-id \(bundleURL.lastPathComponent)")
             return nil
         }
 
@@ -48,9 +59,15 @@ final class BrowserRepository {
             bundleIdentifier: bundleIdentifier,
             displayName: displayName
         ) else {
+            BrowserSelectorDiagnostics.record(
+                "repository-reject id=\(bundleIdentifier) name=\(displayName)"
+            )
             return nil
         }
 
+        BrowserSelectorDiagnostics.record(
+            "repository-accept id=\(bundleIdentifier) name=\(displayName) path=\(bundleURL.path)"
+        )
         let icon = iconProvider.icon(forApplicationAt: bundleURL)
 
         return Browser(

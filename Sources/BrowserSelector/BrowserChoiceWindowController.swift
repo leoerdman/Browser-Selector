@@ -88,9 +88,11 @@ final class BrowserChoiceWindowController: NSWindowController {
 
     func present() {
         guard let window else {
+            BrowserSelectorDiagnostics.record("chooser-present no-window")
             return
         }
 
+        BrowserSelectorDiagnostics.record("chooser-present browsers=\(browsers.count) tileWidth=\(tileWidth)")
         window.center()
         window.contentView?.layoutSubtreeIfNeeded()
         window.displayIfNeeded()
@@ -106,6 +108,7 @@ final class BrowserChoiceWindowController: NSWindowController {
             return
         }
 
+        BrowserSelectorDiagnostics.record("chooser-outside-click-cancel")
         complete(.cancel)
     }
 
@@ -205,9 +208,13 @@ final class BrowserChoiceWindowController: NSWindowController {
 
     @objc private func browserTileDidClick(_ sender: BrowserTileButton) {
         guard browsers.indices.contains(sender.tag) else {
+            BrowserSelectorDiagnostics.record("chooser-tile-click out-of-range tag=\(sender.tag)")
             return
         }
 
+        BrowserSelectorDiagnostics.record(
+            "chooser-tile-click id=\(browsers[sender.tag].bundleIdentifier) tag=\(sender.tag)"
+        )
         selectedIndex = sender.tag
         updateTileSelection()
         complete(
@@ -291,12 +298,15 @@ final class BrowserChoiceWindowController: NSWindowController {
     private func handleKeyDown(_ event: NSEvent) -> Bool {
         switch event.keyCode {
         case 123:
+            BrowserSelectorDiagnostics.record("chooser-key left from=\(selectedIndex)")
             moveSelection(by: -1)
             return true
         case 124:
+            BrowserSelectorDiagnostics.record("chooser-key right from=\(selectedIndex)")
             moveSelection(by: 1)
             return true
         case 36, 49, 76:
+            BrowserSelectorDiagnostics.record("chooser-key confirm selected=\(selectedIndex)")
             openSelectedBrowser()
             return true
         default:

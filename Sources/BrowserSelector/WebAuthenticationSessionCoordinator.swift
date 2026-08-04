@@ -6,26 +6,25 @@ final class WebAuthenticationSessionCoordinator {
     init() {}
 
     /// Enterprise decision: Browser Selector does NOT intercept
-    /// `ASWebAuthenticationSession` requests.
+    /// `ASWebAuthenticationSession` requests as the system-role browser.
     ///
-    /// OAuth flows (Google, Microsoft, Anthropic, etc.) launched by other
-    /// applications require a full Safari instance because WKWebView cannot
-    /// complete the OAuth dance (Google actively blocks embedded browsers,
-    /// PKCE challenge/response needs real Safari storage, etc.).
+    /// Browser Selector intercepts every web link via LaunchServices (the
+    /// `http`/`https` default handler) and surfaces a browser chooser; this
+    /// includes OAuth/SSO URLs initiated by apps via
+    /// `ASWebAuthenticationSession`. After the user picks a browser, the
+    /// OAuth provider's authorize page opens in it, the user completes the
+    /// consent flow, and macOS returns the registered callback URL to the
+    /// originating application through that app's own registered URL
+    /// scheme (e.g. `claude://`, `msauth.…://`, `chatgpt://`). This is the
+    /// same callback path macOS uses for any non-default-browser app.
     ///
-    /// Previously we registered as
+    /// By intentionally leaving
     /// `ASWebAuthenticationSessionWebBrowserSessionManager.shared.sessionHandler`
-    /// and intercepted every OAuth request from every app. When we cancelled
-    /// the request (`cancelWithError`), macOS silently retained the session
-    /// and re-activated it ~1 hour later, causing the browser-picker to
-    /// re-appear out of context. This was reported as the top user-facing bug.
-    ///
-    /// By intentionally leaving `sessionHandler` unassigned, macOS opens the
-    /// URL directly in the system's default auth browser (Safari), exactly as
-    /// it does for every other application that is not a web-browser
-    /// replacement. OAuth completes natively; the callback URL is delivered
-    /// to the originating app (e.g. Claude, ChatGPT) via its registered URL
-    /// scheme; no stray retries, no phantom picker.
+    /// unassigned, the in-process WKWebView path is never taken. Earlier
+    /// implementations registered a session handler and cancelled the
+    /// request with `cancelWithError`, but macOS silently retained the
+    /// session and re-activated it ~1 hour later, causing the browser
+    /// picker to re-appear out of context.
     ///
     /// `wasLaunchedByAuthenticationServices` from the manager is inspected
     /// purely for diagnostics so we can see in logs when another app

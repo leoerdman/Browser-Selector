@@ -44,6 +44,7 @@ final class MenuBarController: NSObject {
             self?.refreshMenu()
         }
         refreshMenu()
+        BrowserSelectorDiagnostics.record("menubar-install")
     }
 
     deinit {
@@ -56,6 +57,9 @@ final class MenuBarController: NSObject {
         let menu = NSMenu()
         let isDefaultBrowser = registrationService.isDefaultBrowser
         let browsers = browserRepository.installedBrowsers()
+        BrowserSelectorDiagnostics.record(
+            "menubar-refresh isDefault=\(isDefaultBrowser) browsers=\(browsers.count)"
+        )
         preferences.reconcileRememberedBrowser(
             availableBundleIdentifiers: Set(browsers.map(\.bundleIdentifier))
         )
@@ -209,11 +213,16 @@ final class MenuBarController: NSObject {
 
     @objc private func toggleBrowserVisibility(_ sender: NSMenuItem) {
         guard let bundleIdentifier = sender.representedObject as? String else {
+            BrowserSelectorDiagnostics.record("menubar-toggle-visibility no-representedObject")
             return
         }
 
         let shouldShow = !preferences.isBrowserVisible(bundleIdentifier: bundleIdentifier)
+        BrowserSelectorDiagnostics.record(
+            "menubar-toggle-visibility id=\(bundleIdentifier) shouldShow=\(shouldShow)"
+        )
         guard shouldShow || canHideBrowser(bundleIdentifier: bundleIdentifier, browsers: browserRepository.installedBrowsers()) else {
+            BrowserSelectorDiagnostics.record("menubar-toggle-visibility refused-hide last-visible id=\(bundleIdentifier)")
             return
         }
 

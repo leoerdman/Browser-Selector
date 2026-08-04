@@ -40,4 +40,19 @@ final class AuthFlowClassifierTests: XCTestCase {
     func testEmptyPathIsNotAuthentication() {
         XCTAssertFalse(AuthFlowClassifier.isAuthenticationFlow(URL(string: "https://example.com")!))
     }
+
+    func testClaudeDotComOAuthAuthorizeIsAuthentication() {
+        let url = URL(string: "https://claude.com/api/oauth/authorize?client_id=x&redirect_uri=y&response_type=code")!
+        XCTAssertTrue(AuthFlowClassifier.isAuthenticationFlow(url))
+    }
+
+    func testGoogleAccountsOAuthIsAuthentication() {
+        let url = URL(string: "https://accounts.google.com/o/oauth2/v2/auth?client_id=x&redirect_uri=y&scope=openid")!
+        XCTAssertTrue(AuthFlowClassifier.isAuthenticationFlow(url))
+    }
+
+    func testMicrosoftLoginAuthorizeIsAuthentication() {
+        let url = URL(string: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=x")!
+        XCTAssertTrue(AuthFlowClassifier.isAuthenticationFlow(url))
+    }
 }
