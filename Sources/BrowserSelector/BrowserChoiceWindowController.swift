@@ -61,8 +61,14 @@ final class BrowserChoiceWindowController: NSWindowController {
         window.hasShadow = true
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
-        window.level = .floating
-        window.collectionBehavior = [.moveToActiveSpace, .transient]
+        // Use a high window level so the chooser is visible even when the
+        // originating app (e.g. Claude.app) is in fullscreen or has strong
+        // focus. `.screenSaver` is above `.floating` and above standard app
+        // windows; it is the same level used by systemPasswordPanel/alerts.
+        window.level = .screenSaver
+        // Show on every Space and across Spaces so the chooser follows the
+        // user no matter where the originating app lives.
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
 
         super.init(window: window)
 
@@ -96,6 +102,10 @@ final class BrowserChoiceWindowController: NSWindowController {
         window.center()
         window.contentView?.layoutSubtreeIfNeeded()
         window.displayIfNeeded()
+        // orderFrontRegardless forces the window to the front even when our
+        // app is not the active app — important because the URL may be
+        // delivered while the originating app (Claude.app) retains focus.
+        window.orderFrontRegardless()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         startOutsideClickMonitor()
@@ -578,9 +588,15 @@ private final class OutsidePanelClickMonitor {
         .otherMouseDown
     ]
 
+    /// Grace interval after registration during which global mouse-down
+    /// events are ignored. Prevents the click that opened the chooser from
+    /// being re-delivered to the monitor and dismissing the panel.
+    private static let graceInterval: TimeInterval = 0.3
+
     private let onMouseDown: (NSPoint) -> Void
     private var localMonitor: Any?
     private var globalMonitor: Any?
+    private var startedAt: Date?
 
     init(onMouseDown: @escaping (NSPoint) -> Void) {
         self.onMouseDown = onMouseDown
@@ -597,15 +613,49 @@ private final class OutsidePanelClickMonitor {
             return
         }
 
+        // Defer monitor registration to the next run-loop tick so the mouse
+        // event that triggered the URL (and launched/routed through Browser
+        // Selector) is fully consumed before we begin observing. Without this
+        // the very click that opened the chooser is delivered to the global
+        // monitor and immediately dismisses the panel.
+        DispatchQueue.main.async { [weak self] in
+            self?.registerMonitors()
+        }
+    }
+
+    private func registerMonitors() {
+        guard localMonitor == nil,
+              globalMonitor == nil
+        else {
+            return
+        }
+
+        let startedAt = Date()
+        self.startedAt = startedAt
+
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: Self.mouseDownEvents) { [weak self] event in
             self?.handle(event)
             return event
         }
 
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: Self.mouseDownEvents) { [weak self] event in
+            guard let self else { return }
+            // Defense-in-depth: ignore events that arrive within the grace
+            // interval after registration. The deferred registration already
+            // filters the originating click in practice; this guards against
+            // any residual queued delivery and against spurious system events
+            // fired as part of app activation.
+            let elapsed = Date().timeIntervalSince(startedAt)
+            if elapsed < Self.graceInterval {
+                BrowserSelectorDiagnostics.record(
+                    "chooser-outside-click-grace-ignore elapsed=\(String(format: "%.3f", elapsed))"
+                )
+                return
+            }
+
             let screenLocation = Self.screenLocation(for: event)
             DispatchQueue.main.async {
-                self?.onMouseDown(screenLocation)
+                self.onMouseDown(screenLocation)
             }
         }
     }
@@ -620,6 +670,8 @@ private final class OutsidePanelClickMonitor {
             NSEvent.removeMonitor(globalMonitor)
             self.globalMonitor = nil
         }
+
+        startedAt = nil
     }
 
     private func handle(_ event: NSEvent) {
