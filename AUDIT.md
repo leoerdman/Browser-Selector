@@ -1251,6 +1251,30 @@ return "LaunchServices вернул ошибку \(status) для обработ
 
 Объяснение: app metadata, README, tag и release artifact снова будут указывать на один проверенный build.
 
+## 47. P1/SSOT - публичный latest release отстал бы от OAuth/installer fixes
+
+Файл и строка: `Resources/Info.plist:60`, `README.md:35`.
+
+Суть: после интеграции OAuth/SSO чиентировки через browser chooser (вместо `ASWebAuthenticationSession.sessionHandler`), 24h TTL diagnostics и Gumroad installer (`Scripts/package_macos_installer.sh`), bundle metadata и documented tag нужно поднять с `1.0.3` до `1.0.4`.
+
+Последствие: один-tag-указывает-на-HEAD инвариант. `v1.0.3` уже опубликован на `d7fbc79→51a0e95` (origin/main ДО OAuth-коммитов), и Head-from-tag history расходится с Head-main HEAD. Apple Silicon installer artifact и OAuth routing — existence-breaking functional delta, не patch overlay поверх `1.0.3`.
+
+Было:
+
+```xml
+<string>1.0.3</string>
+<string>4</string>
+```
+
+Стало:
+
+```xml
+<string>1.0.4</string>
+<string>5</string>
+```
+
+Объяснение: app metadata, README inline `BROWSER_SELECTOR_VERSION=v1.0.4`, README `git tag v1.0.4`, README installer artifact basenames (`BrowserSelector-1.0.4.pkg/.dmg/.sha256`), и новый annotated tag `v1.0.4` на bumped HEAD снова указывают на один canonical build. Исторический tag `v1.0.3` сохранён на `d7fbc79` — rewriting опубликованного tag нарушает enterprise-дисциплину и ломает checksums уже скачанных `BrowserSelector-1.0.3.pkg`/`.dmg` артефактов.
+
 ## Verification
 
 Выполнено после фиксов:

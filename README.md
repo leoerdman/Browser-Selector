@@ -32,7 +32,7 @@
 Для установки конкретной версии:
 
 ```bash
-BROWSER_SELECTOR_VERSION=v1.0.3 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/UltraDeepAutomation/Browser-Selector/main/Scripts/install_latest.sh)"
+BROWSER_SELECTOR_VERSION=v1.0.4 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/UltraDeepAutomation/Browser-Selector/main/Scripts/install_latest.sh)"
 ```
 
 ## Установка из локального клона
@@ -83,8 +83,8 @@ GitHub Actions автоматически:
 Релиз:
 
 ```bash
-git tag v1.0.3
-git push origin v1.0.3
+git tag v1.0.4
+git push origin v1.0.4
 ```
 
 ## macOS installer для Gumroad
@@ -107,12 +107,12 @@ BROWSER_SELECTOR_NOTARY_PROFILE=browser-selector-notary \
 Готовые файлы:
 
 ```text
-dist/installer/BrowserSelector-1.0.3.pkg
-dist/installer/BrowserSelector-1.0.3.dmg
-dist/installer/BrowserSelector-1.0.3.dmg.sha256
+dist/installer/BrowserSelector-1.0.4.pkg
+dist/installer/BrowserSelector-1.0.4.dmg
+dist/installer/BrowserSelector-1.0.4.dmg.sha256
 ```
 
-`BrowserSelector-1.0.3.pkg` устанавливает приложение в `/Applications`, регистрирует bundle в LaunchServices и запускает Browser Selector после установки. При первом запуске macOS может показать системное подтверждение назначения браузера по умолчанию - это обязательный user-consent flow macOS.
+`BrowserSelector-1.0.4.pkg` устанавливает приложение в `/Applications`, регистрирует bundle в LaunchServices и запускает Browser Selector после установки. При первом запуске macOS может показать системное подтверждение назначения браузера по умолчанию - это обязательный user-consent flow macOS.
 
 Для публичной продажи вне Mac App Store нужны именно:
 
