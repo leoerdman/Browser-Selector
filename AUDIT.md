@@ -1293,6 +1293,32 @@ return "LaunchServices вернул ошибку \(status) для обработ
 - WKWebView machinery (`begin`/`cancel`/`complete(withCallbackURL:)`, `decidePolicyFor`, `additionalHeaderFields`, `ephemeral`) сохраняется скомпилированной как defense-in-depth на случай, если будущее продуктовое решение изменит launch profile (обычное запускаемое приложение).
 - `AuthFlowClassifier` остаётся diagnostics-only — он не является routing gate.
 
+### Подтверждение на реванше (v1.0.5, restart 13:36 UTC, попытка 20:46 UTC)
+
+После установки v1.0.5 (handler disabled, `auth-session-handler disabled`)
+и реального user-click “Continue with Google” в Claude.app зафиксировано в
+unified log (session UUID `C292294F-CD37-49E5-9545-0A8888718AFB`):
+
+- `Dock → LaunchServices.launchViaCSUA`
+- `SafariLaunchAgent … Enqueued authentication session request … URL = https://claude.com/cai/login/app-google-auth?open_in_browser=1, callback = Callback { scheme: claude }`
+- `LAUNCH: Asking CSUI to launch 0 items` — macOS не передаёт сессию нашему
+  процессу (как и любому default browser), ровно как предсказано в §48.
+- `begin` не доставлялся в процесс Browser Selector (PID 22479) — в
+  `diagnostics.log` отсутствуют события `auth-session begin`; kAEGetURL handler
+  также не получил ни одного URL после рестарта (callback уходит на
+  зарегистрированный владельец `claude:` = `com.anthropic.claudefordesktop`).
+- Secure web view загрузил login (TLS connection к `claude.com:443`, start
+  20:46:43) → connection cancelled ~20:47:44 (~60 s) → Claude показывает
+  “Failed to login, it may have been cancelled”.
+
+Корневая причина user-facing failure'а — серверная логика
+`claude.com/cai/login/app-google-auth?open_in_browser=1` не завершается внутри
+`SFAuthenticationViewController`; это не баг Browser Selector и не результат
+handler-регистрации. Наш код после фикса v1.0.5 в этом path не участвует and
+не может участвовать: macOS резервирует `ASWebAuthenticationSession` за OS,
+callback `claude://` уходит прямому владельцу scheme (Claude.app), а Browser
+Selector получает только обычные `http(s)` открытия через `kAEGetURL`.
+
 ## Verification
 
 Выполнено после фиксов:
