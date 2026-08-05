@@ -1275,6 +1275,24 @@ return "LaunchServices вернул ошибку \(status) для обработ
 
 Объяснение: app metadata, README inline `BROWSER_SELECTOR_VERSION=v1.0.4`, README `git tag v1.0.4`, README installer artifact basenames (`BrowserSelector-1.0.4.pkg/.dmg/.sha256`), и новый annotated tag `v1.0.4` на bumped HEAD снова указывают на один canonical build. Исторический tag `v1.0.3` сохранён на `d7fbc79` — rewriting опубликованного tag нарушает enterprise-дисциплину и ломает checksums уже скачанных `BrowserSelector-1.0.3.pkg`/`.dmg` артефактов.
 
+## 48. P1 - OAuth chooser UX сломан для ASWebAuthenticationSession (Claude/ChatGPT)
+
+Файл и строка: `Sources/BrowserSelector/WebAuthenticationSessionCoordinator.swift` (`install()`), `AppDelegate.swift:34`, `Resources/Info.plist` (`ASWebAuthenticationSessionWebBrowserSupportCapabilities`).
+
+Суть: OAuth/SSO флоу из Claude.app (и аналогичных приложений, использующих `ASWebAuthenticationSession`) никогда не доходил до chooser'а. Пользователь видит системное окно `SFAuthenticationViewController` (Safari secure web view) с consent-шитом `Claude.app wants to use claude.com to Sign In`, но выбора браузера нет. При регистрации `sessionHandler` дополнительно возникает отмена сессии (`Failed to login, it may have been cancelled`).
+
+Диагностика (установлено экспериментально в v1.0.5, измерено в unified log):
+- При `sessionHandler` **не зарегистрированном** (`3b657e9`, лог `auth-session-handler disabled`): запрос Claude уходит в `SafariLaunchAgent` (`Enqueued authentication session request … URL = https://claude.com/cai/login/app-google-auth?open_in_browser=1, callback = Callback { scheme: claude }`), затем `LaunchServices.launchViaCSUA` → `LAUNCH: Asking CSUI to launch 0 items`. macOS решает не передавать сессию никакому приложению и показывает собственный secure web view.
+- При `sessionHandler` **зарегистрированном** (`e84a93b`/v1.0.5 working tree, лог `auth-session-handler installed`): macOS **ни разу не доставил `begin`** в наш процесс — тот же `SafariLaunchAgent` capture, `wasLaunchedByAuthenticationServices=false`; хуже того, сессия отменяется (`CSUI`-диалог → cancel), что ломает даже штатный OAuth-path.
+- Вывод (корректный, SSOT): macOS 27 передаёт `ASWebAuthenticationSession` браузеру **только через запуск обычного, launchable приложения** (`LaunchServices.launchViaCSUA`). Menu-bar агент (`LSUIElement=true`, LS-флаг `ui-element` + `launch-disabled`) никогда не запускается системой под auth-session, поэтому `begin` недостижим в принципе. Это ограничение ОС (architectural), а не баг регистрации. Регистрация `sessionHandler` бесполезна для agent-app и **вредит** (вызывает cancel сессии у исходного приложения). «Работоспособность» `3b657e9` для OAuth никогда не была доказана: проверялся только обычный `open https://…` через LaunchServices (другой механизм, kAEGetURL, к auth-session не относящийся).
+
+Решение (v1.0.5):
+- `install()` НЕ назначает `manager.sessionHandler`, записывает `auth-session-handler disabled` и возвращает `false` (SSOT — регистрация запрещена для agent-app, см. обоснование выше).
+- Обычные `http(s)` открытия (весь use-case chooser'а) продолжают идти через LaunchServices → `kAEGetURL` → chooser — этот путь не затрагивается.
+- `ASWebAuthenticationSession` флоу остаётся за macOS (Safari secure web view, Apple-санкционированный путь); callback URL возвращается в исходное приложение через его URL scheme, и OAuth завершается штатно.
+- WKWebView machinery (`begin`/`cancel`/`complete(withCallbackURL:)`, `decidePolicyFor`, `additionalHeaderFields`, `ephemeral`) сохраняется скомпилированной как defense-in-depth на случай, если будущее продуктовое решение изменит launch profile (обычное запускаемое приложение).
+- `AuthFlowClassifier` остаётся diagnostics-only — он не является routing gate.
+
 ## Verification
 
 Выполнено после фиксов:

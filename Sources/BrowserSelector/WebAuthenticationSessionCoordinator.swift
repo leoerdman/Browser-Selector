@@ -3,40 +3,43 @@ import AuthenticationServices
 import Foundation
 import WebKit
 
-/// SSOT bridge between macOS `ASWebAuthenticationSession` (OAuth/SSO flows
-/// initiated by third‑party apps such as Claude, ChatGPT, Linear, …) and the
-/// Browser Selector user experience.
+/// Enterprise bridge for macOS `ASWebAuthenticationSession` (OAuth/SSO flows
+/// initiated by third‑party apps such as Claude, ChatGPT, Linear, …).
 ///
-/// When an app calls `ASWebAuthenticationSession.start()`, macOS consults
+/// **Design invariant (SSOT):** Browser Selector is a LaunchServices web-browser
+/// handler and intentionally does **not** register itself as
 /// `ASWebAuthenticationSessionWebBrowserSessionManager.shared.sessionHandler`.
-/// If no handler is registered, macOS falls back to a system‑owned secure
-/// `SFAuthenticationViewController` (Safari/WKWebView) rendered inside the
-/// originating app — completely bypassing Browser Selector. By registering
-/// `WebAuthenticationSessionCoordinator` as the session handler we become the
-/// single source of truth for every authentication web flow on the machine.
 ///
-/// The enterprise design follows Apple's intended contract: the handler owns a
-/// `WKWebView` that loads the authentication URL in‑app. The handler observes
-/// every main‑frame navigation via `decidePolicyFor`:
-///   • When the URL matches the request's callback (custom scheme such as
-///     `claude://`, `msauth.…://`, `chatgpt://`), the handler calls
-///     `request.complete(withCallbackURL:)` and dismisses the window — this is
-///     the canonical macOS completion path.
-///   • Non‑web custom schemes that are not the callback are forwarded to their
-///     owning app via `NSWorkspace.shared.open(_:)` (with a self‑loop guard).
-///   • Regular `http(s)` navigations are allowed so the OAuth provider renders
-///     inside the in‑app WebView — matching what Chrome/Safari would render.
+/// Why: macOS hands an `ASWebAuthenticationSession` request to a browser only
+/// by *launching* a real, launchable application to own the session
+/// (`LaunchServices.launchViaUI` → the system then delivers `begin`). An
+/// always-running menu-bar agent (`LSUIElement=true`) is not launchable for
+/// this purpose, so macOS always routes the session to Safari's secure
+/// `SFAuthenticationViewController` (outer consent sheet + embedded web view),
+/// and `begin` is never delivered to us in *either* registration state (this
+/// was measured: registering the handler, `e84a93b`, reproduced exactly the
+/// same `SafariLaunchAgent` capture and a session cancellation).
 ///
-/// This keeps the entire OAuth handshake within one WKWebView we control, so
-/// the callback lands deterministically and the originating app receives its
-/// tokens. Enterprise considerations:
-///   • SSOT: there is exactly one session handler per process (the coordinator
-///     is retained by `AppDelegate`).
-///   • No duplication of chooser logic — the chooser (`BrowserChoiceWindowController`)
-///     remains the SSOT for *user‑initiated* link routing via LaunchServices;
-///     the auth session window is the SSOT for *system‑initiated* auth flows.
-///   • Callbacks never reach LaunchServices (no round‑trip through external
-///     browsers), so there is no risk of re‑entering the chooser.
+/// Worse, registering the handler actively harms the only working path: with a
+/// handler present macOS attempts the handoff, finds it can't launch us, and
+/// cancels the originating app's session (`Failed to login, it may have been
+/// cancelled`). With no handler, the OS owns SSO through its secure web view and
+/// completes normally, and the callback URL returns to the originating app
+/// through its own URL scheme — the behavior the user sees as "works".
+///
+/// Correct behavior for this product: leave `sessionHandler` unassigned.
+/// Ordinary `http(s)` opens (the entire chooser use-case) still arrive via
+/// LaunchServices → `kAEGetURL` → the chooser. `ASWebAuthenticationSession`
+/// flows are Apple's in-app browser path that macOS reserves for the OS — we
+/// deliberately let macOS complete them rather than fighting the platform.
+///
+/// The coordinator is retained as defense-in-depth infrastructure: it keeps
+/// the in-app `WKWebView` machinery and the `ASWebAuthenticationSessionWebBrowserSessionHandling`
+/// implementation compiled, so the capability to handle auth sessions exists
+/// if a future product decision changes the app's launch profile (e.g. becomes
+/// a regular launchable app). `install()` deliberately records
+/// `auth-session-handler disabled` and returns `false` instead of assigning
+/// `manager.sessionHandler`. `AuthFlowClassifier` remains diagnostics-only.
 
 @available(macOS 10.15, *)
 private func legacyCallbackURLScheme(for request: ASWebAuthenticationSessionRequest) -> String? {
@@ -51,15 +54,33 @@ private func legacyCallbackURLScheme(for request: ASWebAuthenticationSessionRequ
 final class WebAuthenticationSessionCoordinator: NSObject {
     private var activeWindowControllers: [UUID: WebAuthenticationSessionWindowController] = [:]
 
+    /// Whether the coordinator registered itself as the system
+    /// `ASWebAuthenticationSessionWebBrowserSessionManager.sessionHandler`.
+    ///
+    /// Always `false` for a menu‑bar agent (`LSUIElement = true`): macOS cannot
+    /// launch an agent app to own an auth session, so registering actively
+    /// harms the only working (OS‑owned secure web view) path. See the class
+    /// doc‑comment and AUDIT §48 for the full reasoning.
+    private(set) var isHandlerRegistered = false
+
     @discardableResult
     func install() -> Bool {
         let manager = ASWebAuthenticationSessionWebBrowserSessionManager.shared
-        manager.sessionHandler = self
         let wasLaunchedByAuthenticationServices = manager.wasLaunchedByAuthenticationServices
+
+        // SSOT invariant (AUDIT §48): never assign `manager.sessionHandler` for
+        // an agent app. Registering is architecturally useless (macOS cannot
+        // launch an `LSUIElement` app to receive `begin`) and actively breaks
+        // the OS‑owned secure web view path by cancelling the originating app's
+        // session. We deliberately leave the slot unassigned so macOS keeps
+        // owning the auth flow and completes it normally.
+        isHandlerRegistered = false
+
         BrowserSelectorDiagnostics.record(
-            "auth-session-handler installed wasLaunchedByAuthenticationServices=\(wasLaunchedByAuthenticationServices)"
+            "auth-session-handler disabled wasLaunchedByAuthenticationServices=\(wasLaunchedByAuthenticationServices)"
         )
-        return wasLaunchedByAuthenticationServices
+
+        return isHandlerRegistered
     }
 
     private func beginHandling(_ request: ASWebAuthenticationSessionRequest) {
