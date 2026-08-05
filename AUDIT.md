@@ -1371,6 +1371,120 @@ disabled (v1.0.5) этот путь не блокируется; в предуд
 secure-web-view). Для пути B (обычный kAEGetURL open) chooser **достижим и
 работает**, что и наблюдает пользователь в v1.0.5.
 
+## 49. P2/SSOT — недокументированные hardening'и v1.0.4/v1.0.5 (SSOT-cover)
+
+SSOT-цель: между AUDIT §1–§48 и реальным кодом в `main` (commit `0116917`)
+indentfицирован разрыв — six concrete hardening-поведений живут в коде, но не
+описаны ни одним пронумерованным §. Каждое из них — корректное
+defense-in-depth / observability-улучшение, введённое в v1.0.4/v1.0.5, но без
+SSOT-cover будущий developer/аудитор видит код, не описанный в каноничном
+AUDIT, и рискует «починить» уже-починённое или потерять инвариант при
+рефакторинге. Этот раздел закрывает SSOT-разрыв перечислением каждого
+hardening'а с точным `file:line`-указателем и описанием инварианта.
+
+Подтверждено deep verification agent'ом (read-only audit по `main` HEAD):
+0 divergences между §1–§48 и кодом, 12/12 explicit checks PASS, six
+undocumented behaviors — все benign, все перечислены ниже.
+
+### 49.1 — Diagnostics retention + debounced prune (24h TTL)
+
+Файл и строка: `Sources/BrowserSelector/BrowserSelectorDiagnostics.swift:6`
+(`retentionInterval`), `:16` (`recentLogReadByteLimit`),
+`:18-22` (`pruneDebounceInterval`, `lastPruneCheckAt`),
+`:113-158` (`pruneOldEntries`, `pruneOldEntriesIfNeeded`).
+
+Суть: diagnostics-лог имеет 24h retention (`retentionInterval = 24 * 60 * 60`)
+и debounced prune-pass каждые 60s (`pruneDebounceInterval = 60`), запускаемый
+как side-effect of `record(_:)` без background-timer'а. §23 описывает только
+tail-read window (64KB); retention/prune machinery в §1–§48 не упомянуты
+(вынесены в §48 addendum только контекстно как «24h TTL diagnostics»).
+
+Инвариант: лог не растёт бесконечно; prune не запускается на каждой записи
+(O(n) over file → debounce 60s); `pruneOldEntries(at:)` visible-for-testing.
+
+### 49.2 — `AuthFlowClassifier` SSOT-role (diagnostics-only, не routing gate)
+
+Файл и строка: `Sources/BrowserSelector/AuthFlowClassifier.swift:3-23`
+(class doc-comment), `:24` (`enum AuthFlowClassifier`),
+`:111` (`static func isAuthenticationFlow(_ url: URL) -> Bool`).
+
+Суть: `AuthFlowClassifier` — substantial SSOT-компонент (~152 строки) с
+host-suffix / path-token / query-key таксономией OAuth/SSO. Его
+инвариант — **diagnostics-only, не routing gate**: classifier only маркирует
+URL как auth-flow для observability (`auth-flow-detected chooser-open …`),
+routing идёт через стандартный `BrowserSelectorConstants.isWebURL` →
+`URLDispatchCoordinator` независимо от classifier'а. §48 строка 1302
+упоминает это sub-bullet'ом, но не как standalone § — нет явного
+SSOT-cover для самого инварианта «classifier не gates routing».
+
+Инвариант: `isAuthenticationFlow` не влияет на routing decision; удалять или
+менять classifier можно без risk routing-regression. Защита от regression:
+`AuthFlowClassifierTests` покрывают классификацию, routing
+тестируется отдельно (`BrowserChoiceWindowControllerTests`).
+
+### 49.3 — Chooser window level `.screenSaver` + cross-Space visibility
+
+Файл и строка: `Sources/BrowserSelector/BrowserChoiceWindowController.swift:64-71`
+(`window.level = .screenSaver`, `window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]`).
+
+Суть: окно chooser'а поднимается на уровень `.screenSaver` (выше `.floating`
+и стандартных app-windows, тот же уровень что `systemPasswordPanel`/alerts) и
+делается видимым на всех Spaces + через fullscreen auxiliary. Мотивация
+vrn1.0.5 OAuth-handler-experience: originating app (Claude.app) может быть в
+fullscreen или держать сильный focus — chooser должен остаться видимым.
+В §1–§48 это deliberate hardening не называется отдельным пунктом.
+
+Инвариант: chooser виден даже когда originating app fullscreen; не
+regress-нёт на `.floating` без явного решения (иначе OAuth chooser
+исчезнет под fullscreen app — прямой regression пути B из §48).
+
+### 49.4 — `OutsidePanelClickMonitor` grace interval (0.3s)
+
+Файл и строка: `Sources/BrowserSelector/BrowserChoiceWindowController.swift:591-594`
+(`graceInterval = 0.3`), `:609-624` (`start` → `DispatchQueue.main.async { registerMonitors() }`).
+
+Суть: глобальный mouse-down monitor registration deferred на следующий
+run-loop tick + `graceInterval = 0.3s` после регистрации, в течение которого
+events ignored. Защита: click, открывший chooser (или launched Browser
+Selector через kAEGetURL), не re-deliver'ится в monitor и не dismiss'ит
+панель мгновенно. В §1–§48 не задокументировано — defense-in-depth.
+
+Инвариант: originating click never dismisses chooser; monitor активен
+только после grace. Защита от regression: при regress (убрать grace)
+chooser бы закрывался тем же кликом, который его открыл — UX regression.
+
+### 49.5 — §40 enhancement: `set active tab index` для existing-window branch
+
+Файл и строка: `Sources/BrowserSelector/BrowserLaunchScriptFactory.swift:18`
+(`set active tab index to (count of tabs)` в existing-window branch).
+
+Суть: §40 fix (нет лишней пустой вкладки при zero windows) описан в
+AUDIT строками 1078-1085, но "Стало" блок **не** включает `set active tab
+index to (count of tabs)` — коде дополнительно делает новую вкладку
+активной. Enhancement сверх §40: новая вкладка не просто создаётся, но и
+фокусируется. Не divergence (empty-tab bug пофикшен как описано), но
+code does strictly more than AUDIT transcript показывает.
+
+Инвариант: new tab becomes active after creation; без этой строки новая
+вкладка создалась бы но осталась бы в фоне (UX regression для §40).
+
+### 49.6 — §22 mirror: `BrowserUsageStore.defaultFileURL()` defensive fallback
+
+Файл и строка: `Sources/BrowserSelector/BrowserUsageStore.swift:146-150`
+(`defaultFileURL()` → `FileManager.default.urls(...).first ?? URL(fileURLWithPath: NSHomeDirectory())...`).
+
+Суть: §22 описывает fix crash на `[0]` только для
+`Sources/BrowserSelector/BrowserSelectorDiagnostics.swift`. Та же
+defensive pattern применена в `BrowserUsageStore.defaultFileURL()` —
+идентичный fallback `?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")`. AUDIT §22 не
+упоминает mirror в usage store — SSOT-нечестность: fix описан для одного
+файла, а применяется в двух. Не divergence (обе копии корректны), но
+AUDIT сообщал бы только половину SSOT.
+
+Инвариант: оба Application Support resolver'а (diagnostics + usage store)
+имеют deterministic fallback; regression-protect: change one → change
+both (SSOT for the fallback pattern).
+
 ## Verification
 
 Выполнено после фиксов:
@@ -1395,4 +1509,14 @@ quarantine xattr отсутствует
 http=https=public.html handler: com.leoerdman.BrowserSelector
 process path: ~/Applications/Browser Selector.app/Contents/MacOS/BrowserSelector
 System Events background only: true
+```
+
+Deep SSOT verification (commit `0116917`, read-only audit agent):
+
+```text
+§1–§48 vs code: 0 divergences (12/12 explicit checks PASS)
+§49 SSOT-cover: 6/6 undocumented hardening'ов задокументированы
+README vs code (lines 9, 27, 35, 86-87, 110-112, 115, 161): PASS
+worktrees: 1 (main only, no mcode/* branches, no stash)
+git tag v1.0.0..v1.0.5: preserved (no rewrite)
 ```
