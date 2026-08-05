@@ -28,10 +28,32 @@ import WebKit
 /// through its own URL scheme — the behavior the user sees as "works".
 ///
 /// Correct behavior for this product: leave `sessionHandler` unassigned.
-/// Ordinary `http(s)` opens (the entire chooser use-case) still arrive via
-/// LaunchServices → `kAEGetURL` → the chooser. `ASWebAuthenticationSession`
-/// flows are Apple's in-app browser path that macOS reserves for the OS — we
-/// deliberately let macOS complete them rather than fighting the platform.
+///
+/// **Two-path model (SSOT, see AUDIT §48):** OAuth/SSO from Claude.app et al.
+/// reaches Browser Selector by one of two mutually exclusive routes:
+/// - **Path A — `ASWebAuthenticationSession` secure-web-view:** macOS shows the
+///   consent sheet (`<App> wants to use <host> to Sign In`) and loads the login
+///   page inside Safari's `SFAuthenticationViewController`. We never receive
+///   `begin` on this path and the callback goes directly to the originating
+///   app's URL scheme. This is Apple's sanctioned path for SSO in a system
+///   web view; we deliberately let macOS complete it. The chooser does **not**
+///   appear here (by design).
+/// - **Path B — ordinary `open https://…?open_in_browser=1` via LaunchServices:**
+///   when the originating app (or a user click) evaluates the OAuth start URL
+///   as a normal web link, macOS routes it through LaunchServices to the
+///   default browser handler (Browser Selector) → `kAEGetURL` → chooser → the
+///   browser the user picks, where OAuth completes. Observed working in v1.0.5
+///   (2026-08-05 15:53 UTC: `apple-event-url` → `chooser-present` in 16 ms →
+///   `com.google.Chrome.dev` → `launch-success`; `diagnostics.log` lines
+///   1039–1078). On path B the chooser **does** appear and the flow succeeds in
+///   the user's real browser.
+///
+/// Ordinary `http(s)` opens (the entire chooser use-case) also arrive via
+/// LaunchServices → `kAEGetURL` → the chooser and are unaffected by handler
+/// registration. `install()` deliberately records `auth-session-handler
+/// disabled` and returns `false` instead of assigning `manager.sessionHandler`.
+/// `AuthFlowClassifier` remains diagnostics-only — it labels auth-flow URLs in
+/// the log but is not a routing gate.
 ///
 /// The coordinator is retained as defense-in-depth infrastructure: it keeps
 /// the in-app `WKWebView` machinery and the `ASWebAuthenticationSessionWebBrowserSessionHandling`

@@ -1284,7 +1284,15 @@ return "LaunchServices вернул ошибку \(status) для обработ
 Диагностика (установлено экспериментально в v1.0.5, измерено в unified log):
 - При `sessionHandler` **не зарегистрированном** (`3b657e9`, лог `auth-session-handler disabled`): запрос Claude уходит в `SafariLaunchAgent` (`Enqueued authentication session request … URL = https://claude.com/cai/login/app-google-auth?open_in_browser=1, callback = Callback { scheme: claude }`), затем `LaunchServices.launchViaCSUA` → `LAUNCH: Asking CSUI to launch 0 items`. macOS решает не передавать сессию никакому приложению и показывает собственный secure web view.
 - При `sessionHandler` **зарегистрированном** (`e84a93b`/v1.0.5 working tree, лог `auth-session-handler installed`): macOS **ни разу не доставил `begin`** в наш процесс — тот же `SafariLaunchAgent` capture, `wasLaunchedByAuthenticationServices=false`; хуже того, сессия отменяется (`CSUI`-диалог → cancel), что ломает даже штатный OAuth-path.
-- Вывод (корректный, SSOT): macOS 27 передаёт `ASWebAuthenticationSession` браузеру **только через запуск обычного, launchable приложения** (`LaunchServices.launchViaCSUA`). Menu-bar агент (`LSUIElement=true`, LS-флаг `ui-element` + `launch-disabled`) никогда не запускается системой под auth-session, поэтому `begin` недостижим в принципе. Это ограничение ОС (architectural), а не баг регистрации. Регистрация `sessionHandler` бесполезна для agent-app и **вредит** (вызывает cancel сессии у исходного приложения). «Работоспособность» `3b657e9` для OAuth никогда не была доказана: проверялся только обычный `open https://…` через LaunchServices (другой механизм, kAEGetURL, к auth-session не относящийся).
+- Вывод (корректный, SSOT): macOS 27 передаёт `ASWebAuthenticationSession` браузеру **только через запуск обычного, launchable приложения** (`LaunchServices.launchViaCSUA`). Menu-bar агент (`LSUIElement=true`, LS-флаг `ui-element` + `launch-disabled`) никогда не запускается системой под auth-session, поэтому `begin` недостижим в принципе. Это ограничение ОС (architectural), а не баг регистрации. Регистрация `sessionHandler` бесполезна для agent-app и **вредит** (вызывает cancel сессии у исходного приложения).
+
+**Важно (модель из двух путей):** `begin` недостижим относится **только** к пути `ASWebAuthenticationSession` → внутренний `SFAuthenticationViewController` Safari. Это **не** означает недостижимость chooser'а для OAuth вообще. Claude.app с `open_in_browser=1` ходит **двумя** конкурирующими путями:
+
+- **Путь A (ASWebAuthenticationSession secure-web-view):** macOS показывает consent-шит `Claude.app wants to use claude.com to Sign In` и загружает login в `SFAuthenticationViewController`. На этот путь Browser Selector **не** влияет (и не должен — Apple-санкционированный путь для SSO в системном web view); callback `claude://` возвращается напрямую во владельца scheme (Claude.app).
+- **Путь B (обычный `open https://…` через LaunchServices → `kAEGetURL`):** когда Claude (или user через external click) эвалирует `https://claude.com/…?open_in_browser=1` как **обычную** web-ссылку, macOS открывает её через LaunchServices → default browser handler (Browser Selector) → `kAEGetURL` → chooser → выбранный браузер. На этом пути OAuth успешно завершается в **реальном** браузере пользователя (см. addendum ниже).
+
+Какой путь сработает зависит от серверной/клиентской логики Claude (конкретный `open_in_browser` evolution Approved
+manifest sainчала была `open_in_browser=redacted` query → либо внешний `open` либо internal SFAuth). В v1.0.5 (handler disabled) оба пути НЕ блокируются нашим кодом; путь B делает chooser доступным для OAuth, что и наблюдает пользователь.
 
 Решение (v1.0.5):
 - `install()` НЕ назначает `manager.sessionHandler`, записывает `auth-session-handler disabled` и возвращает `false` (SSOT — регистрация запрещена для agent-app, см. обоснование выше).
@@ -1318,6 +1326,50 @@ handler-регистрации. Наш код после фикса v1.0.5 в э
 не может участвовать: macOS резервирует `ASWebAuthenticationSession` за OS,
 callback `claude://` уходит прямому владельцу scheme (Claude.app), а Browser
 Selector получает только обычные `http(s)` открытия через `kAEGetURL`.
+
+### Рабочий путь: kAEGetURL → chooser → выбранный браузер (v1.0.5, 2026-08-05 15:53 UTC)
+
+В тот же день (через ~19 ч после попытки 20:46 UTC, на той же v1.0.5, PID 22479,
+handler disabled) пользователь снова запустил «Continue with Google» в Claude.app,
+и на этот раз OAuth дошёл до chooser'а и завершился успешно. Из `diagnostics.log`
+(строки 1039–1078):
+
+```text
+2026-08-05T15:53:17.564Z apple-event-url https://claude.com/cai/login/app-google-auth?open_in_browser=redacted
+2026-08-05T15:53:17.620Z route-incoming https://claude.com/cai/login/app-google-auth?open_in_browser=redacted isWeb=true isAuth=true
+2026-08-05T15:53:17.620Z auth-flow-detected chooser-open https://claude.com/cai/login/app-google-auth?open_in_browser=redacted
+2026-08-05T15:53:17.620Z dispatch-enqueue … queueDepth=1 hasActiveURL=false hasActiveWindow=false
+2026-08-05T15:53:17.636Z dispatch-chooser-present
+2026-08-05T15:53:17.636Z chooser-present browsers=4 tileWidth=108.0
+2026-08-05T15:57:25.767Z chooser-tile-click id=com.google.Chrome.dev tag=0
+2026-08-05T15:57:25.825Z chooser-opened https://claude.com/… in com.google.Chrome.dev
+2026-08-05T15:57:26.016Z launcher-open primary-success com.google.Chrome.dev
+2026-08-05T15:57:26.017Z dispatch-finish activeURL=true remainingQueue=0
+```
+
+- `apple-event-url` для `https://claude.com/…?open_in_browser=redacted` доставлен
+  в наш `kAEGetURL` handler за **16 мс** (`apple-event-url` 15:53:17.564 →
+  `chooser-present` 15:53:17.636), `auth-flow-detected` срабатывает
+  (`AuthFlowClassifier.isAuthenticationFlow == true`), chooser показан.
+- Пользователь выбрал `com.google.Chrome.dev`, URL открыт в новой вкладке
+  (`launcher-chromium-newtab`), `launch-success` подтверждает реальный launch.
+- В выбранном Chrome Dev OAuth продолжился штатно (открылась страница выбора
+  Google-аккаунтов — то, что и видит пользователь).
+
+Это **путь B** из описанной выше модели. Условие его срабатывания: Claude
+(или клик user'а) эвалирует `https://claude.com/…?open_in_browser=1` как
+**обычный** `http(s)` open, а не как `ASWebAuthenticationSession`. При handler
+disabled (v1.0.5) этот путь не блокируется; в предудыщих версиях с
+`auth-session-handler installed` он бы мешался (возможно, macOS перехватывала
+тот же URL в SFAuthenticationViewController, отменяя session — точная
+зависимость от server-side logic пока не установлена, но v1.0.5 reliably
+доставляет chooser при обычном open).
+
+**SSOT-следствие:** утверждение «chooser недостижим для Claude/ChatGPT OAuth»
+(раньше в README строка 9/161 и в первоначальном «Вывод» §48) — **неправильное**
+в общем случае. Оно верно **только** для пути A (ASWebAuthenticationSession
+secure-web-view). Для пути B (обычный kAEGetURL open) chooser **достижим и
+работает**, что и наблюдает пользователь в v1.0.5.
 
 ## Verification
 
