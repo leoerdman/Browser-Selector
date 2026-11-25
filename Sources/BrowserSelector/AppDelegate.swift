@@ -95,7 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func routeIncomingURL(_ url: URL) {
-        let isWeb = BrowserSelectorConstants.isWebURL(url)
+        let isWeb = BrowserSelectorConstants.isWebURL(url) || BrowserSelectorConstants.isLocalWebDocument(url)
         let isAuth = AuthFlowClassifier.isAuthenticationFlow(url)
         BrowserSelectorDiagnostics.record(
             "route-incoming \(BrowserSelectorDiagnostics.describe(url: url)) isWeb=\(isWeb) isAuth=\(isAuth)"

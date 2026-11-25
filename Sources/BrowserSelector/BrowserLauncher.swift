@@ -3,11 +3,6 @@ import Darwin
 import Foundation
 
 final class BrowserLauncher {
-    private enum LaunchFallbackPolicy {
-        case allowLaunchServices
-        case requireUserAction(Error)
-    }
-
     private enum Timeout {
         static let appleScript: TimeInterval = 12
         static let process: TimeInterval = 10
@@ -20,117 +15,92 @@ final class BrowserLauncher {
     private var activeProcesses: [UUID: Process] = [:]
 
     func open(_ url: URL, in browser: Browser, completion: @escaping (Result<Void, Error>) -> Void) {
+        let plan = BrowserLaunchPlan.strategies(chromiumLike: browser.usesChromiumTabModel)
         BrowserSelectorDiagnostics.record(
-            "launcher-open begin \(BrowserSelectorDiagnostics.describe(url: url)) in \(browser.bundleIdentifier) chromiumLike=\(browser.usesChromiumTabModel)"
+            "launcher-open begin \(BrowserSelectorDiagnostics.describe(url: url)) in \(browser.bundleIdentifier) chromiumLike=\(browser.usesChromiumTabModel) plan=\(plan)"
         )
-        openInExistingBrowserWindow(url, browser: browser) { [weak self] primaryResult in
-            guard let self else {
-                BrowserSelectorDiagnostics.record("launcher-open self=nil after primary attempt")
-                completion(.failure(BrowserLaunchError(message: "Browser launcher was released before opening the link.")))
-                return
-            }
-
-            switch primaryResult {
-            case .success:
-                BrowserSelectorDiagnostics.record("launcher-open primary-success \(browser.bundleIdentifier)")
-                completion(.success(()))
-                return
-            case let .failure(error):
-                BrowserSelectorDiagnostics.record(
-                    "launcher-open primary-failure \(browser.bundleIdentifier) error=\(error.localizedDescription) fallback=\(Self.fallbackPolicy(for: error))"
-                )
-                switch Self.fallbackPolicy(for: error) {
-                case .allowLaunchServices:
-                    break
-                case let .requireUserAction(error):
-                    completion(.failure(error))
-                    return
-                }
-            }
-
-            BrowserSelectorDiagnostics.record("launcher-open fallback openLocation \(browser.bundleIdentifier)")
-            self.openLocation(url, browser: browser) { [weak self] openLocationResult in
-                guard let self else {
-                    BrowserSelectorDiagnostics.record("launcher-open self=nil after openLocation fallback")
-                    completion(.failure(BrowserLaunchError(message: "Browser launcher was released before fallback opening the link.")))
-                    return
-                }
-
-                switch openLocationResult {
-                case .success:
-                    BrowserSelectorDiagnostics.record("launcher-open openLocation-success \(browser.bundleIdentifier)")
-                    completion(.success(()))
-                case let .failure(error):
-                    BrowserSelectorDiagnostics.record(
-                        "launcher-open openLocation-failure \(browser.bundleIdentifier) error=\(error.localizedDescription) fallback=\(Self.fallbackPolicy(for: error))"
-                    )
-                    switch Self.fallbackPolicy(for: error) {
-                    case .allowLaunchServices:
-                        BrowserSelectorDiagnostics.record("launcher-open fallback launchServices \(browser.bundleIdentifier)")
-                        self.openThroughLaunchServices(url, browser: browser, completion: completion)
-                    case let .requireUserAction(error):
-                        completion(.failure(error))
-                    }
-                }
-            }
-        }
+        attempt(plan[...], url: url, browser: browser, completion: completion)
     }
 
-    private func openInExistingBrowserWindow(
-        _ url: URL,
+    private func attempt(
+        _ remaining: ArraySlice<BrowserLaunchStrategy>,
+        url: URL,
         browser: Browser,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
-        guard browser.usesChromiumTabModel else {
-            BrowserSelectorDiagnostics.record(
-                "launcher-chromium-skip non-chromium \(browser.bundleIdentifier) → openLocation"
-            )
-            openLocation(url, browser: browser, completion: completion)
+        guard let strategy = remaining.first else {
+            BrowserSelectorDiagnostics.record("launcher-open plan-exhausted \(browser.bundleIdentifier)")
+            completion(.failure(BrowserLaunchError(message: "Не удалось открыть ссылку ни одним способом.")))
             return
         }
 
-        BrowserSelectorDiagnostics.record(
-            "launcher-chromium-newtab \(browser.bundleIdentifier) \(BrowserSelectorDiagnostics.describe(url: url))"
-        )
-        runAppleScript(
-            BrowserLaunchScriptFactory.chromiumNewTabScript(
-                bundleIdentifier: browser.bundleIdentifier,
-                urlString: url.absoluteString
-            ),
-            completion: completion
-        )
+        run(strategy, url: url, browser: browser) { [weak self] result in
+            switch result {
+            case .success:
+                BrowserSelectorDiagnostics.record("launcher-open success strategy=\(strategy) \(browser.bundleIdentifier)")
+                completion(.success(()))
+            case let .failure(error):
+                let appleEventsDenied = (error as? BrowserLaunchError)?.isAppleEventsAuthorizationDenied == true
+                let next = BrowserLaunchPlan.strategies(after: remaining, appleEventsDenied: appleEventsDenied)
+                BrowserSelectorDiagnostics.record(
+                    "launcher-open failure strategy=\(strategy) \(browser.bundleIdentifier) error=\(error.localizedDescription) appleEventsDenied=\(appleEventsDenied) next=\(Array(next))"
+                )
+
+                guard !next.isEmpty else {
+                    completion(.failure(error))
+                    return
+                }
+
+                guard let self else {
+                    BrowserSelectorDiagnostics.record("launcher-open self=nil before next=\(Array(next))")
+                    completion(.failure(BrowserLaunchError(message: "Browser launcher was released before opening the link.")))
+                    return
+                }
+
+                self.attempt(next, url: url, browser: browser, completion: completion)
+            }
+        }
     }
 
-    private func openLocation(
-        _ url: URL,
+    private func run(
+        _ strategy: BrowserLaunchStrategy,
+        url: URL,
         browser: Browser,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
-        BrowserSelectorDiagnostics.record(
-            "launcher-open-location \(browser.bundleIdentifier) \(BrowserSelectorDiagnostics.describe(url: url))"
-        )
-        runAppleScript(
-            BrowserLaunchScriptFactory.openLocationScript(
-                bundleIdentifier: browser.bundleIdentifier,
-                urlString: url.absoluteString
-            ),
-            completion: completion
-        )
-    }
-
-    private func openThroughLaunchServices(
-        _ url: URL,
-        browser: Browser,
-        completion: @escaping (Result<Void, Error>) -> Void
-    ) {
-        BrowserSelectorDiagnostics.record(
-            "launcher-launchservices \(browser.bundleIdentifier) open -b \(BrowserSelectorDiagnostics.describe(url: url))"
-        )
-        runProcess(
-            executableURL: URL(fileURLWithPath: "/usr/bin/open"),
-            arguments: ["-b", browser.bundleIdentifier, url.absoluteString],
-            completion: completion
-        )
+        switch strategy {
+        case .chromiumNewTab:
+            BrowserSelectorDiagnostics.record(
+                "launcher-chromium-newtab \(browser.bundleIdentifier) \(BrowserSelectorDiagnostics.describe(url: url))"
+            )
+            runAppleScript(
+                BrowserLaunchScriptFactory.chromiumNewTabScript(
+                    bundleIdentifier: browser.bundleIdentifier,
+                    urlString: url.absoluteString
+                ),
+                completion: completion
+            )
+        case .openLocation:
+            BrowserSelectorDiagnostics.record(
+                "launcher-open-location \(browser.bundleIdentifier) \(BrowserSelectorDiagnostics.describe(url: url))"
+            )
+            runAppleScript(
+                BrowserLaunchScriptFactory.openLocationScript(
+                    bundleIdentifier: browser.bundleIdentifier,
+                    urlString: url.absoluteString
+                ),
+                completion: completion
+            )
+        case .launchServices:
+            BrowserSelectorDiagnostics.record(
+                "launcher-launchservices \(browser.bundleIdentifier) open -b \(BrowserSelectorDiagnostics.describe(url: url))"
+            )
+            runProcess(
+                executableURL: URL(fileURLWithPath: "/usr/bin/open"),
+                arguments: ["-b", browser.bundleIdentifier, url.absoluteString],
+                completion: completion
+            )
+        }
     }
 
     private func runAppleScript(
@@ -337,16 +307,6 @@ final class BrowserLauncher {
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
-    private static func fallbackPolicy(for error: Error) -> LaunchFallbackPolicy {
-        guard let launchError = error as? BrowserLaunchError,
-              launchError.isAutomationPermissionDenied
-        else {
-            return .allowLaunchServices
-        }
-
-        return .requireUserAction(error)
-    }
-
 }
 
 private extension Browser {
@@ -384,7 +344,7 @@ private struct BrowserLaunchError: LocalizedError {
         message
     }
 
-    var isAutomationPermissionDenied: Bool {
-        errorNumber == -1743
+    var isAppleEventsAuthorizationDenied: Bool {
+        errorNumber == BrowserLaunchPlan.appleEventsNotPermittedErrorNumber
     }
 }

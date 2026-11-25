@@ -40,4 +40,25 @@ final class BrowserSelectorConstantsTests: XCTestCase {
         XCTAssertFalse(BrowserSelectorConstants.isWebURL(try XCTUnwrap(URL(string: "file:///tmp/test.html"))))
         XCTAssertFalse(BrowserSelectorConstants.isWebURL(try XCTUnwrap(URL(string: "browser-selector://test"))))
     }
+
+    func testLocalWebDocumentsAreFilesOfClaimedContentTypes() throws {
+        let claimed = BrowserSelectorConstants.claimedDocumentContentTypes(from: [
+            ["LSItemContentTypes": ["public.html"]],
+            ["LSItemContentTypes": ["PUBLIC.XHTML", "public.html"]]
+        ])
+
+        XCTAssertEqual(claimed, ["public.html", "public.xhtml"])
+        XCTAssertTrue(BrowserSelectorConstants.isLocalWebDocument(
+            URL(fileURLWithPath: "/Users/me/Programming - Main/PROJECT-MAP.html"), claimedContentTypes: claimed
+        ))
+        XCTAssertTrue(BrowserSelectorConstants.isLocalWebDocument(
+            URL(fileURLWithPath: "/tmp/page.xhtml"), claimedContentTypes: claimed
+        ))
+        XCTAssertFalse(BrowserSelectorConstants.isLocalWebDocument(
+            URL(fileURLWithPath: "/tmp/notes.txt"), claimedContentTypes: claimed
+        ))
+        XCTAssertFalse(BrowserSelectorConstants.isLocalWebDocument(
+            try XCTUnwrap(URL(string: "https://example.com/page.html")), claimedContentTypes: claimed
+        ))
+    }
 }

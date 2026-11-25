@@ -1,4 +1,5 @@
 import Foundation
+import UniformTypeIdentifiers
 
 enum BrowserSelectorConstants {
     private static let defaultWebURLSchemes = ["http", "https"]
@@ -28,6 +29,41 @@ enum BrowserSelectorConstants {
         }
 
         return Set(webURLSchemes).contains(scheme)
+    }
+
+    /// Local document the app claims in `CFBundleDocumentTypes` (public.html, public.xhtml): macOS hands such files
+    /// to the default browser, so they go to the chooser like web links instead of looping back through LaunchServices.
+    static func isLocalWebDocument(_ url: URL) -> Bool {
+        isLocalWebDocument(url, claimedContentTypes: claimedDocumentContentTypes(
+            from: Bundle.main.object(forInfoDictionaryKey: "CFBundleDocumentTypes")
+        ))
+    }
+
+    static func isLocalWebDocument(_ url: URL, claimedContentTypes: [String]) -> Bool {
+        guard url.isFileURL,
+              let fileType = UTType(filenameExtension: url.pathExtension)
+        else {
+            return false
+        }
+
+        return claimedContentTypes.compactMap(UTType.init).contains { fileType.conforms(to: $0) }
+    }
+
+    static func claimedDocumentContentTypes(from rawDocumentTypes: Any?) -> [String] {
+        guard let documentTypes = rawDocumentTypes as? [[String: Any]] else {
+            return []
+        }
+
+        return documentTypes
+            .flatMap { ($0["LSItemContentTypes"] as? [String]) ?? [] }
+            .map { $0.lowercased() }
+            .reduce(into: []) { uniqueContentTypes, contentType in
+                guard !uniqueContentTypes.contains(contentType) else {
+                    return
+                }
+
+                uniqueContentTypes.append(contentType)
+            }
     }
 
     static func webURLSchemes(from rawURLTypes: Any?) -> [String] {

@@ -1485,6 +1485,20 @@ AUDIT сообщал бы только половину SSOT.
 имеют deterministic fallback; regression-protect: change one → change
 both (SSOT for the fallback pattern).
 
+## 50. P1 - Automation-отказ (-1743) терял ссылку вместо fallback
+
+Файл и строка: `Sources/BrowserSelector/BrowserLauncher.swift` (`open`/`attempt`), `Sources/BrowserSelector/BrowserLaunchPlan.swift`.
+
+Суть: при `errAEEventNotPermitted` (-1743) `fallbackPolicy` возвращал `requireUserAction`: цепочка обрывалась, пользователь получал алерт «Не удалось открыть ссылку», ссылка терялась. Наблюдено 2026-11-14 в одном и том же процессе (запущен 2026-11-09): в 10:17 `applescript-execute-success` для `com.google.Chrome.dev`, с 11:13 — мгновенный (~20 мс, без системного запроса) `-1743`. Chrome Dev обновлялся фоновым updater'ом на месте (`Info.plist` mtime сегодня, процесс перезапущен в 15:42) — TCC отклоняет Apple Events к цели, чья подпись на диске не совпадает с запущенным процессом; тот же код приходит при явном отказе пользователя.
+
+Последствие: любая Chromium-ссылка (включая OAuth `authorize`) не открывалась до ручного перезапуска браузера/выдачи прав.
+
+Исправление: порядок запуска вынесен в SSOT `BrowserLaunchPlan` — `[chromiumNewTab, openLocation, launchServices]` для Chromium, `[openLocation, launchServices]` для остальных. `.launchServices` (`open -b`, доставка через `kAEGetURL` самого браузера) не требует Automation-доступа и всегда завершает план. При -1743 остальные Apple Events-шаги пропускаются (они упали бы так же) и ссылка сразу уходит в LaunchServices. Попутно убран повторный `openLocation` для не-Chromium браузеров (primary и fallback были одним и тем же скриптом).
+
+Объяснение: отсутствие прав на Apple Events ухудшает только способ доставки (новая вкладка через AppleScript → `open -b`), но не может терять ссылку. Diagnostics: `launcher-open … plan=…`, `launcher-open failure strategy=… appleEventsDenied=… next=…`, `launcher-open success strategy=…`.
+
+Тесты: `Tests/BrowserSelectorTests/BrowserLaunchPlanTests.swift`.
+
 ## Verification
 
 Выполнено после фиксов:
